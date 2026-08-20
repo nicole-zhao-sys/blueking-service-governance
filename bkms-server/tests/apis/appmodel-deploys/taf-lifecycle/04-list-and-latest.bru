@@ -40,7 +40,7 @@ tests {
     expect(latest.status).to.equal("deployed");
     expect(latest.replicas).to.equal(1);
     expect(latest.clusterID).to.equal("BCS-K8S-00001");
-    expect(latest.namespace).to.equal("default");
+    expect(latest.namespace).to.equal(bru.getVar("tafLifecycleNamespace"));
   });
 
   test("should expose the v1 record via latest-status", () => {

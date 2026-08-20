@@ -33,7 +33,7 @@ script:pre-request {
       cluster: {
         clusterID: "BCS-K8S-00001",
         clusterType: "single",
-        namespace: "default"
+        namespace: `ns-apdf-${suffix}`
       }
     });
     // Helm app is enough to trigger the "not appmodel app" / "invalid app type"

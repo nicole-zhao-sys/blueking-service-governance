@@ -352,8 +352,9 @@ async function createWorkspace(options = {}) {
  * @param {string} options.cluster.namespace - 命名空间（必填）
  *
  * @example
- * // 完整示例
- *     const apiTestEnvName = "test-" + bru.getVar("randomSuffix");
+ * // 完整示例（注意：namespace 须在整个测试运行中唯一，不可硬编码为 "default"）
+ *     const suffix = bru.getVar("randomSuffix");
+ *     const apiTestEnvName = "test-" + suffix;
  *     await common.createEnvironment({
  *         name: apiTestEnvName,
  *         workspaceID: apiTestWorkspaceID,
@@ -362,7 +363,7 @@ async function createWorkspace(options = {}) {
  *         cluster:{
  *             clusterID: "BCS-K8S-12345",
  *             clusterType: "single",
- *             namespace: "default",
+ *             namespace: `ns-mytest-${suffix}`,
  *         }
  *     });
  *     bru.setVar('apiTestEnvName',apiTestEnvName);

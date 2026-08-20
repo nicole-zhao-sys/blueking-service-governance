@@ -149,6 +149,7 @@ func NewEnvironmentStoreMongo(client *mongo.Client, dbName string) (EnvironmentS
 	coll := client.Database(dbName).Collection(environmentCollectionName)
 	// 索引（由 golang-migrate 维护）：
 	// - 唯一：workspaceID + name
+	// - 唯一：cluster.clusterID + cluster.namespace（仅当两者均非空时生效）
 	// - 查询提速：ownerAppID
 	return &EnvironmentStoreMongo{collection: coll}, nil
 }

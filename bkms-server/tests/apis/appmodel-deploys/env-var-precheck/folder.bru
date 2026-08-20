@@ -31,7 +31,7 @@ script:pre-request {
       cluster: {
         clusterID: "BCS-K8S-00001",
         clusterType: "single",
-        namespace: "default"
+        namespace: `ns-evpc-${suffix}`
       }
     });
 

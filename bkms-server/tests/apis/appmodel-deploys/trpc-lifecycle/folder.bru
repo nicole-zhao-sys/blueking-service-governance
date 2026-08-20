@@ -66,7 +66,7 @@ script:pre-request {
       cluster: {
         clusterID: "BCS-K8S-00001",
         clusterType: "single",
-        namespace: "default"
+        namespace: `ns-tdeploy-${suffix}`
       }
     });
     const app = await common.createTrpcApp({
@@ -105,6 +105,7 @@ script:pre-request {
     bru.setVar("trpcLifecycleWorkspaceID", ws.id);
     bru.setVar("trpcLifecycleAppID", app.id);
     bru.setVar("trpcLifecycleEnvName", envName);
+    bru.setVar("trpcLifecycleNamespace", `ns-tdeploy-${suffix}`);
     bru.setVar("trpcLifecycleImageTag1", imageTag1);
     bru.setVar("trpcLifecycleImageTag2", imageTag2);
     bru.setVar("trpcLifecycleReady", true);
