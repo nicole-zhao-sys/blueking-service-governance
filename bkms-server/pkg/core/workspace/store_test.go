@@ -397,6 +397,31 @@ var _ = Describe("WorkspaceStore", func() {
 		It("rejects write when context has no tenant", func() {
 			Expect(store.Create(context.Background(), &workspaceA)).To(MatchError(tenant.ErrTenantIDRequired))
 		})
+
+		It("allows platform store to read across tenants without tenant context", func() {
+			ctxA := tenant.WithTenantID(context.Background(), "tenant-a")
+			ctxB := tenant.WithTenantID(context.Background(), "tenant-b")
+			platformStore := store.CrossTenant()
+
+			workspaceA.State = StateReady
+			workspaceB.State = StateDisabled
+
+			Expect(store.Create(ctxA, &workspaceA)).To(Succeed())
+			Expect(store.Create(ctxB, &workspaceB)).To(Succeed())
+
+			workspaces, err := platformStore.List(context.Background(), nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(workspaces).To(HaveLen(2))
+
+			gotB, err := platformStore.Get(context.Background(), workspaceB.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(gotB.TenantID).To(Equal("tenant-b"))
+
+			counts, err := platformStore.CountByState(context.Background(), nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(counts[StateReady]).To(Equal(int64(1)))
+			Expect(counts[StateDisabled]).To(Equal(int64(1)))
+		})
 	})
 })
 

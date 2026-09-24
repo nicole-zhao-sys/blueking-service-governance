@@ -47,7 +47,8 @@ func New(registry *storereg.Registry) *GinHandler {
 
 func (h *GinHandler) service() *platmgtworkspace.Service {
 	return platmgtworkspace.NewService(
-		h.registry.WorkspaceStore,
+		// 平台管理跨租户使用
+		h.registry.WorkspaceStore.CrossTenant(),
 		h.registry.AppStore,
 		h.registry.EnvStore,
 	)

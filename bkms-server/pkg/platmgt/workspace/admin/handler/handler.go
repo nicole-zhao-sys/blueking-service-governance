@@ -145,7 +145,8 @@ func (h *Handler) RevokeWorkspaceAdmin(c *gin.Context) {
 
 func (h *Handler) workspaceAdminService() *workspaceadmin.Service {
 	return workspaceadmin.NewService(
-		h.registry.WorkspaceStore,
+		// 平台管理跨租户使用
+		h.registry.WorkspaceStore.CrossTenant(),
 		h.registry.TempAdminRecordStore,
 		perm.NewManager(),
 	)

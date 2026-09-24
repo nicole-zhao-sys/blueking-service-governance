@@ -58,6 +58,9 @@ type ListPageOptions struct {
 
 // WorkspaceStore 是用于管理工作空间的存储接口
 type WorkspaceStore interface {
+	// CrossTenant 返回同一底层 store 的跨租户访问视图。
+	CrossTenant() WorkspaceStore
+
 	// List 获取工作空间列表，由于每个用户的工作空间数量有限，不设分页
 	List(ctx context.Context, opts *ListOptions) ([]Workspace, error)
 
@@ -109,10 +112,7 @@ func (s *WorkspaceStoreMongo) buildListFilter(opts *ListOptions) bson.M {
 // NewWorkspaceStoreMongo ...
 func NewWorkspaceStoreMongo(client *mongo.Client, dbName string) (*WorkspaceStoreMongo, error) {
 	coll := client.Database(dbName).Collection(workspaceCollectionName)
-	// 索引（由 golang-migrate 维护）：
-	// - 唯一：id
-	// - 普通：tenant_id
-	return &WorkspaceStoreMongo{collection: dbtenant.Wrap(coll)}, nil
+	return newWorkspaceStoreMongo(dbtenant.WrapTenant(coll)), nil
 }
 
 // List 获取工作空间列表
@@ -230,6 +230,11 @@ func (s *WorkspaceStoreMongo) Delete(ctx context.Context, id string) error {
 	return err
 }
 
+// CrossTenant 返回同一张 workspaces 表的跨租户访问视图。
+func (s *WorkspaceStoreMongo) CrossTenant() WorkspaceStore {
+	return dbtenant.CrossTenantValue(s.collection, newWorkspaceStoreMongo)
+}
+
 // workspaceCountByState is the decoded row from MongoDB $group aggregation by state.
 type workspaceCountByState struct {
 	// State decodes MongoDB $group output field "_id", which holds the grouping key "$state".
@@ -263,4 +268,11 @@ func (s *WorkspaceStoreMongo) CountByState(ctx context.Context, opts *ListOption
 		return item.State, item.Count
 	})
 	return counts, nil
+}
+
+func newWorkspaceStoreMongo(collection *dbtenant.Collection) *WorkspaceStoreMongo {
+	// 索引（由 golang-migrate 维护）：
+	// - 唯一：id
+	// - 普通：tenant_id
+	return &WorkspaceStoreMongo{collection: collection}
 }

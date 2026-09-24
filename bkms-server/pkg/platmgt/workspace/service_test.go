@@ -54,10 +54,10 @@ var _ = Describe("PlatWorkspaceService", func() {
 			bkmsworkspace.FxModule,
 			bkmsapp.FxModule,
 			env.FxModule,
-			FxModule,
-			fx.Populate(&service, &workspaceStore, &appStore, &envSvc),
+			fx.Populate(&workspaceStore, &appStore, &envSvc),
 		)
 		diApp.RequireStart()
+		service = NewService(workspaceStore.CrossTenant(), appStore, envSvc)
 	})
 
 	AfterEach(func() {
@@ -293,5 +293,25 @@ var _ = Describe("PlatWorkspaceService", func() {
 		Expect(stats.ProcessingCount - baselineStats.ProcessingCount).To(Equal(int64(1)))
 		Expect(stats.DisabledCount - baselineStats.DisabledCount).To(Equal(int64(1)))
 		Expect(stats.TotalCount - baselineStats.TotalCount).To(Equal(int64(3)))
+	})
+
+	It("should list workspaces across tenants for platform management", func() {
+		ctxA := tenant.WithTenantID(context.Background(), "tenant-a")
+		ctxB := tenant.WithTenantID(context.Background(), "tenant-b")
+		wsA := dbfactory.Workspace(ctxA, workspaceStore)
+		wsB := dbfactory.Workspace(ctxB, workspaceStore)
+		defer func() {
+			_ = workspaceStore.Delete(ctxA, wsA.ID)
+			_ = workspaceStore.Delete(ctxB, wsB.ID)
+		}()
+
+		items, err := service.List(context.Background(), WorkspaceListOptions{
+			Page:     1,
+			PageSize: 10,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(items.Count).To(Equal(int64(2)))
+		Expect(items.Results).To(HaveLen(2))
+		Expect(items.Statistics.TotalCount).To(Equal(int64(2)))
 	})
 })

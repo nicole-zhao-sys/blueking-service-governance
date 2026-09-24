@@ -33,18 +33,49 @@ import (
 
 // Collection 包装 mongo.Collection，按租户上下文注入过滤与写入字段。
 type Collection struct {
-	inner      *mongo.Collection
-	name       string
-	isPlatform bool // 缓存：集合是否为平台级（不做租户隔离）
+	inner *mongo.Collection
+	name  string
+	// 访问视角：tenant 表示默认租户隔离，platform / cross_tenant 表示跳过注入
+	scope scopeMode
 }
 
-// Wrap 包装原始集合。租户 ID 一律从 ctx 读取，是否多租户由入口中间件写入 ctx。
-func Wrap(coll *mongo.Collection) *Collection {
+// scopeMode 定义 Collection 的租户访问视角。
+type scopeMode string
+
+const (
+	// scopeTenant 表示该集合按租户上下文隔离访问。
+	scopeTenant scopeMode = "tenant"
+	// scopePlatform 表示该集合是平台全局表，不注入 tenant_id。
+	scopePlatform scopeMode = "platform"
+	// scopeCrossTenant 表示该集合允许调用方以跨租户视角访问。
+	scopeCrossTenant scopeMode = "cross_tenant"
+)
+
+// WrapTenant 包装原始集合，默认做租户隔离；若命中平台表白名单，则自动跳过注入。所有表均以此使用，不再使用 mongo.Collection
+func WrapTenant(coll *mongo.Collection) *Collection {
 	name := coll.Name()
 	return &Collection{
-		inner:      coll,
-		name:       name,
-		isPlatform: isPlatform(name),
+		inner: coll,
+		name:  name,
+		scope: tenantScopeForCollection(name),
+	}
+}
+
+// CrossTenantValue 使用集合的跨租户访问视图
+func CrossTenantValue[T any](collection *Collection, build func(*Collection) T) T {
+	return build(collection.crossTenant())
+}
+
+// crossTenant 返回同一底层集合的跨租户访问视图，仅在需跨租户访问数据时使用，
+// 如平台管理需要跨租户访问 workspace。
+func (c *Collection) crossTenant() *Collection {
+	if c == nil {
+		return nil
+	}
+	return &Collection{
+		inner: c.inner,
+		name:  c.name,
+		scope: scopeCrossTenant,
 	}
 }
 
@@ -249,7 +280,7 @@ func (c *Collection) applyDocumentWithTenant(ctx context.Context, document any) 
 
 // withTenant 是 applyFilterWithTenant / applyDocumentWithTenant 的公共实现。
 func (c *Collection) withTenant(ctx context.Context, in any) (any, error) {
-	if c.isPlatform {
+	if !c.shouldInjectTenant() {
 		return in, nil
 	}
 	tenantID, err := c.requireTenant(ctx)
@@ -264,7 +295,7 @@ func (c *Collection) withTenant(ctx context.Context, in any) (any, error) {
 }
 
 func (c *Collection) applyPipelineWithTenant(ctx context.Context, pipeline any) (any, error) {
-	if c.isPlatform {
+	if !c.shouldInjectTenant() {
 		return pipeline, nil
 	}
 	tenantID, err := c.requireTenant(ctx)
@@ -303,7 +334,7 @@ func (c *Collection) applyPipelineWithTenant(ctx context.Context, pipeline any) 
 }
 
 func (c *Collection) applyDocumentsWithTenant(ctx context.Context, documents any) (any, error) {
-	if c.isPlatform {
+	if !c.shouldInjectTenant() {
 		return documents, nil
 	}
 	tenantID, err := c.requireTenant(ctx)
@@ -369,7 +400,7 @@ func (c *Collection) applyWriteModelsWithTenant(
 	ctx context.Context,
 	models []mongo.WriteModel,
 ) ([]mongo.WriteModel, error) {
-	if c.isPlatform {
+	if !c.shouldInjectTenant() {
 		return models, nil
 	}
 	tenantID, err := c.requireTenant(ctx)
@@ -402,4 +433,15 @@ func (c *Collection) requireTenant(ctx context.Context) (string, error) {
 		return "", tenant.ErrTenantIDRequired
 	}
 	return tenantID, nil
+}
+
+func (c *Collection) shouldInjectTenant() bool {
+	return c.scope == scopeTenant
+}
+
+func tenantScopeForCollection(name string) scopeMode {
+	if isPlatform(name) {
+		return scopePlatform
+	}
+	return scopeTenant
 }

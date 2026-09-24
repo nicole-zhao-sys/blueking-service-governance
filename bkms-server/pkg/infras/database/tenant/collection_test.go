@@ -30,7 +30,7 @@ import (
 )
 
 func newTestCollection(name string) *Collection {
-	return &Collection{name: name, isPlatform: isPlatform(name)}
+	return &Collection{name: name, scope: tenantScopeForCollection(name)}
 }
 
 var _ = Describe("TenantAwareCollection", func() {
@@ -174,6 +174,23 @@ var _ = Describe("TenantAwareCollection", func() {
 
 			_, err := c.applyDocumentWithTenant(ctx, 1)
 			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Describe("crossTenant", func() {
+		It("skips tenant injection for tenant collections", func() {
+			crossTenantCollection := newTestCollection("workspaces").crossTenant()
+
+			filter, err := crossTenantCollection.applyFilterWithTenant(context.Background(), bson.M{"id": "ws-1"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(filter).To(Equal(bson.M{"id": "ws-1"}))
+		})
+
+		It("rebuilds values from cross-tenant view with helper", func() {
+			got := CrossTenantValue(newTestCollection("workspaces"), func(coll *Collection) scopeMode {
+				return coll.scope
+			})
+			Expect(got).To(Equal(scopeCrossTenant))
 		})
 	})
 
