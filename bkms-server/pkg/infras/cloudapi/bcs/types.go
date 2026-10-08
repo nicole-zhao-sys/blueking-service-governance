@@ -18,7 +18,11 @@
 
 package bcs
 
-import "github.com/pkg/errors"
+import (
+	"fmt"
+
+	"github.com/pkg/errors"
+)
 
 var (
 	// ErrNotFound BCS 接口返回 HTTP 404
@@ -26,6 +30,23 @@ var (
 	// ErrProjectNotFound BCS 项目不存在
 	ErrProjectNotFound = errors.New("bcs: project not found")
 )
+
+type apiError struct {
+	Operation  string
+	HTTPStatus int
+	Code       int
+	Message    string
+}
+
+func (e *apiError) Error() string {
+	return fmt.Sprintf(
+		"call bcs api %s failed, http code: %d, business code: %d, message: %s",
+		e.Operation,
+		e.HTTPStatus,
+		e.Code,
+		e.Message,
+	)
+}
 
 // UserTokenStatusActive 有效的 Token 状态
 const UserTokenStatusActive = 1

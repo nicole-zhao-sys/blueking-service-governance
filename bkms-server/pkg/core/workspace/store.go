@@ -21,6 +21,7 @@ package workspace
 import (
 	"context"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -35,6 +36,18 @@ const workspaceCollectionName = "workspaces"
 
 // ErrWorkspaceNotFound 工作空间未找到时, 返回固定错误
 var ErrWorkspaceNotFound = errors.New("workspace not found")
+
+// ErrBCSProjectAlreadyBound BCS 项目已被其他工作空间绑定
+var ErrBCSProjectAlreadyBound = errors.New("bcs project already bound")
+
+// ErrBCSProjectAlreadyExists 自动创建使用的确定性 BCS 项目已存在，且不能作为本次重试复用
+var ErrBCSProjectAlreadyExists = errors.New("bcs project already exists")
+
+// ErrIndependentWorkspaceBizRequired 独立 BCS 模式下新建容器项目必须提供业务 ID
+var ErrIndependentWorkspaceBizRequired = errors.New("bizID is required when creating an independent bcs project")
+
+// ErrIndependentWorkspaceBizInvalid 独立 BCS 模式下业务不存在或当前用户无权访问
+var ErrIndependentWorkspaceBizInvalid = errors.New("independent workspace biz is invalid")
 
 // ListOptions 工作空间查询参数
 type ListOptions struct {
@@ -64,6 +77,9 @@ type WorkspaceStore interface {
 
 	// Get 通过 ID 获取工作空间
 	Get(ctx context.Context, id string) (*Workspace, error)
+
+	// GetByBCSProject 通过 BCS 项目 ID / code 获取工作空间
+	GetByBCSProject(ctx context.Context, projectID, projectCode string) (*Workspace, error)
 
 	// Create 创建新的工作空间
 	Create(ctx context.Context, workspace *Workspace) error
@@ -109,6 +125,7 @@ func NewWorkspaceStoreMongo(client *mongo.Client, dbName string) (*WorkspaceStor
 	coll := client.Database(dbName).Collection(workspaceCollectionName)
 	// 索引（由 golang-migrate 维护）：
 	// - 唯一：id
+	// - 唯一（partial）：bkSystems.bkBcsProjectCode
 	return &WorkspaceStoreMongo{collection: coll}, nil
 }
 
@@ -221,6 +238,14 @@ func (s *WorkspaceStoreMongo) Create(ctx context.Context, workspace *Workspace) 
 	workspace.UpdatedAt = timeNow
 
 	if _, err := s.collection.InsertOne(ctx, workspace); err != nil {
+		if mongo.IsDuplicateKeyError(err) &&
+			strings.Contains(err.Error(), "bkSystems.bkBcsProjectCode_1 dup key") {
+			return errors.Wrapf(
+				ErrBCSProjectAlreadyBound,
+				"bcs project(%s) already bound by another workspace",
+				workspace.BkSystems.BkBCSProjectCode,
+			)
+		}
 		return err
 	}
 	return nil

@@ -16,12 +16,16 @@
  * to the current version of the project delivered to anyone in the future.
  */
 
-package workspace
+package handler_test
 
-var (
-	GetBCSProjectBizID           = getBCSProjectBizID
-	PrepareIndependentBCSBinding = prepareIndependentBCSBinding
-	EnsureIndependentBCSProject  = ensureIndependentBCSProject
-	EnsureBCSProjectNotBound     = ensureBCSProjectNotBound
-	RunPreDeleteHooks            = runPreDeleteHooks
+import (
+	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
+
+func TestWorkspaceHandler(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Workspace Handler Suite")
+}

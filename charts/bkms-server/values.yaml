@@ -219,7 +219,7 @@ svcConf:
     #     （绑定已有项目时只会拉取 BCS 授权的项目）。
     # false：新建/绑定都按蓝盾项目处理，BCS ID/Code 复用蓝盾项目
     #     （绑定已有项目时拉取 BCS 和蓝盾授权项目的交集）。
-    enableIndependentBCSProject: true
+    enableIndependentBCSProject: false
   # 蓝鲸 API 环境配置
   bkApiStages:
     # BSCP

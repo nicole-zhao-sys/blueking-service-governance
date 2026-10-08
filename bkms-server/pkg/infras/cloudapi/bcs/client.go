@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/TencentBlueKing/bk-apigateway-sdks/core/bkapi"
@@ -39,6 +40,8 @@ import (
 	"github.com/TencentBlueKing/blueking-service-governance/bkms-server/pkg/observability/apm"
 	"github.com/TencentBlueKing/blueking-service-governance/bkms-server/pkg/observability/metrics"
 )
+
+const projectNotFoundBusinessCode = 40404
 
 // Client BCS API 客户端接口
 type Client interface {
@@ -177,7 +180,7 @@ func (c *ApiClient) GetProject(ctx context.Context, id string) (*Project, error)
 
 	result, err := c.handleOperation(ctx, op)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
+		if isProjectNotFoundError(err) {
 			return nil, errors.Wrapf(ErrProjectNotFound, "get project %s", id)
 		}
 		return nil, errors.Wrapf(err, "get project %s", id)
@@ -188,6 +191,20 @@ func (c *ApiClient) GetProject(ctx context.Context, id string) (*Project, error)
 		return nil, errors.Wrapf(err, "parse project %s", id)
 	}
 	return project, nil
+}
+
+func isProjectNotFoundError(err error) bool {
+	if errors.Is(err, ErrNotFound) {
+		return true
+	}
+
+	var apiErr *apiError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+
+	return apiErr.Code == projectNotFoundBusinessCode ||
+		strings.Contains(apiErr.Message, "项目不存在")
 }
 
 // CreateProject 创建 BCS 项目
@@ -355,7 +372,12 @@ func (c *ApiClient) handleOperation(
 	}
 
 	if cast.ToInt(result["code"]) != 0 {
-		return nil, errors.New(mapx.GetStr(result, "message"))
+		return nil, &apiError{
+			Operation:  apiOperation.FullName(),
+			HTTPStatus: resp.StatusCode,
+			Code:       cast.ToInt(result["code"]),
+			Message:    mapx.GetStr(result, "message"),
+		}
 	}
 	return result, nil
 }

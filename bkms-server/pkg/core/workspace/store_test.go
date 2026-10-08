@@ -155,6 +155,19 @@ var _ = Describe("WorkspaceStore", func() {
 		})
 	})
 
+	Context("Create Duplicate BCS Project Code", func() {
+		It("should return ErrBCSProjectAlreadyBound when creating workspace with duplicate bcs project code", func() {
+			workspaceA.BkSystems.BkBCSProjectCode = "shared-bcs-project"
+			err := store.Create(ctx, &workspaceA)
+			Expect(err).NotTo(HaveOccurred())
+
+			workspaceB.BkSystems.BkBCSProjectCode = "shared-bcs-project"
+			err = store.Create(ctx, &workspaceB)
+			Expect(err).To(MatchError(ErrBCSProjectAlreadyBound))
+			Expect(err.Error()).To(ContainSubstring("shared-bcs-project"))
+		})
+	})
+
 	Context("Empty List", func() {
 		It("should return empty list when no workspaces exist", func() {
 			workspaces, err := store.List(ctx, &ListOptions{})

@@ -16,12 +16,6 @@
  * to the current version of the project delivered to anyone in the future.
  */
 
-package workspace
+package handler
 
-var (
-	GetBCSProjectBizID           = getBCSProjectBizID
-	PrepareIndependentBCSBinding = prepareIndependentBCSBinding
-	EnsureIndependentBCSProject  = ensureIndependentBCSProject
-	EnsureBCSProjectNotBound     = ensureBCSProjectNotBound
-	RunPreDeleteHooks            = runPreDeleteHooks
-)
+var ClassifyEnsureBkSystemsErr = classifyEnsureBkSystemsErr
