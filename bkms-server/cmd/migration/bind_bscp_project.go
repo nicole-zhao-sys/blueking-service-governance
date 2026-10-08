@@ -94,7 +94,8 @@ func runBindBscpProject(
 	storereg.Init(ctx)
 	reg := storereg.G()
 
-	ws, err := reg.WorkspaceStore.Get(ctx, workspaceID)
+	wsStore := reg.WorkspaceStore.CrossTenant()
+	ws, err := wsStore.Get(ctx, workspaceID)
 	if err != nil {
 		return errors.Wrapf(err, "get workspace %s", workspaceID)
 	}
@@ -117,7 +118,7 @@ func runBindBscpProject(
 	ws.BkSystems.BkBSCPProjectKey = strings.TrimSpace(binding.ProjectKey)
 	ws.BkSystems.BscpCredentialID = binding.CredentialID
 	ws.BkSystems.BscpToken = binding.Token
-	if err = reg.WorkspaceStore.Update(ctx, ws); err != nil {
+	if err = wsStore.Update(ctx, ws); err != nil {
 		return errors.Wrap(err, "update workspace bk systems")
 	}
 

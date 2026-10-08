@@ -26,10 +26,13 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	svccfg "github.com/TencentBlueKing/blueking-service-governance/bkms-server/pkg/common/config"
 	"github.com/TencentBlueKing/blueking-service-governance/bkms-server/pkg/common/utils/crypto"
 	"github.com/TencentBlueKing/blueking-service-governance/bkms-server/pkg/infras/database"
+	dbtenant "github.com/TencentBlueKing/blueking-service-governance/bkms-server/pkg/infras/database/tenant"
 	"github.com/TencentBlueKing/blueking-service-governance/bkms-server/pkg/infras/tenant"
 	"github.com/TencentBlueKing/blueking-service-governance/bkms-server/pkg/workload/image/registry"
 )
@@ -373,8 +376,11 @@ var _ = Describe("WorkspaceStore", func() {
 			workspaceA.State = StateReady
 			workspaceB.State = StateReady
 
+			workspaceA.TenantID = "forged"
 			Expect(store.Create(ctxA, &workspaceA)).To(Succeed())
+			Expect(workspaceA.TenantID).To(Equal("tenant-a"))
 			Expect(store.Create(ctxB, &workspaceB)).To(Succeed())
+			Expect(workspaceB.TenantID).To(Equal("tenant-b"))
 
 			listA, err := store.List(ctxA, nil)
 			Expect(err).NotTo(HaveOccurred())
@@ -396,6 +402,11 @@ var _ = Describe("WorkspaceStore", func() {
 
 		It("rejects write when context has no tenant", func() {
 			Expect(store.Create(context.Background(), &workspaceA)).To(MatchError(tenant.ErrTenantIDRequired))
+		})
+
+		It("rejects get when context has no tenant", func() {
+			_, err := store.Get(context.Background(), workspaceA.ID)
+			Expect(err).To(MatchError(tenant.ErrTenantIDRequired))
 		})
 
 		It("allows platform store to read across tenants without tenant context", func() {
@@ -421,6 +432,76 @@ var _ = Describe("WorkspaceStore", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(counts[StateReady]).To(Equal(int64(1)))
 			Expect(counts[StateDisabled]).To(Equal(int64(1)))
+		})
+
+		It("does not update or delete a workspace owned by another tenant", func() {
+			ctxA := tenant.WithTenantID(context.Background(), "tenant-a")
+			ctxB := tenant.WithTenantID(context.Background(), "tenant-b")
+			workspaceB.DisplayName = "original"
+			Expect(store.Create(ctxA, &workspaceA)).To(Succeed())
+			Expect(store.Create(ctxB, &workspaceB)).To(Succeed())
+
+			changed := workspaceB
+			changed.DisplayName = "hijacked"
+			Expect(store.Update(ctxA, &changed)).To(Succeed())
+			Expect(store.Delete(ctxA, workspaceB.ID)).To(Succeed())
+
+			got, err := store.Get(ctxB, workspaceB.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.DisplayName).To(Equal("original"))
+			Expect(got.TenantID).To(Equal("tenant-b"))
+		})
+
+		It("rejects an update that rewrites tenant_id", func() {
+			ctxA := tenant.WithTenantID(context.Background(), "tenant-a")
+			Expect(store.Create(ctxA, &workspaceA)).To(Succeed())
+
+			coll := dbtenant.WrapTenant(
+				database.Client().Database(database.Name()).Collection(workspaceCollectionName),
+			)
+			_, err := coll.UpdateOne(
+				ctxA,
+				bson.M{"id": workspaceA.ID},
+				bson.M{"$set": bson.M{tenant.FieldTenantID: "other"}},
+			)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(tenant.FieldTenantID))
+
+			got, err := store.Get(ctxA, workspaceA.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.TenantID).To(Equal("tenant-a"))
+		})
+
+		It("rejects the same workspace id under another tenant", func() {
+			ctxA := tenant.WithTenantID(context.Background(), "tenant-a")
+			ctxB := tenant.WithTenantID(context.Background(), "tenant-b")
+			workspaceB.ID = workspaceA.ID
+
+			Expect(store.Create(ctxA, &workspaceA)).To(Succeed())
+			err := store.Create(ctxB, &workspaceB)
+			Expect(mongo.IsDuplicateKeyError(err)).To(BeTrue())
+		})
+
+		It("writes tenant_id when an upsert inserts a document", func() {
+			ctxA := tenant.WithTenantID(context.Background(), "tenant-a")
+			coll := dbtenant.WrapTenant(
+				database.Client().Database(database.Name()).Collection(workspaceCollectionName),
+			)
+			id := "workspace-upsert-" + stringx.Random(6)
+
+			_, err := coll.UpdateOne(
+				ctxA,
+				bson.M{"id": id},
+				bson.M{"$set": bson.M{"displayName": "upserted"}},
+				options.UpdateOne().SetUpsert(true),
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			var doc bson.M
+			err = database.Client().Database(database.Name()).Collection(workspaceCollectionName).
+				FindOne(context.Background(), bson.M{"id": id}).Decode(&doc)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(doc[tenant.FieldTenantID]).To(Equal("tenant-a"))
 		})
 	})
 })

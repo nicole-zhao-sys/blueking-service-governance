@@ -183,7 +183,7 @@ func enableBscpCfgForApp(
 		return errors.Wrapf(err, "get app %s", appID)
 	}
 
-	ws, err := reg.WorkspaceStore.Get(ctx, app.WorkspaceID)
+	ws, err := reg.WorkspaceStore.CrossTenant().Get(ctx, app.WorkspaceID)
 	if err != nil {
 		return errors.Wrapf(err, "get workspace %s", app.WorkspaceID)
 	}

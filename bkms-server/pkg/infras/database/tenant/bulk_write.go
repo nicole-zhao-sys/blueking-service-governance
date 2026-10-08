@@ -40,17 +40,23 @@ func injectWriteModel(model mongo.WriteModel, tenantID string) (mongo.WriteModel
 	case *mongo.InsertOneModel:
 		doc, err := setTenantField(m.Document, tenantID)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "document")
 		}
 		cp := *m
 		cp.Document = doc
 		return &cp, nil
 
 	case *mongo.UpdateOneModel:
+		if err := ensureTenantImmutable(m.Update); err != nil {
+			return nil, errors.Wrap(err, "update")
+		}
 		return copyWriteModelWithInjectedFilter(m, m.Filter, tenantID, func(cp *mongo.UpdateOneModel, filter any) {
 			cp.Filter = filter
 		})
 	case *mongo.UpdateManyModel:
+		if err := ensureTenantImmutable(m.Update); err != nil {
+			return nil, errors.Wrap(err, "update")
+		}
 		return copyWriteModelWithInjectedFilter(m, m.Filter, tenantID, func(cp *mongo.UpdateManyModel, filter any) {
 			cp.Filter = filter
 		})
@@ -66,11 +72,11 @@ func injectWriteModel(model mongo.WriteModel, tenantID string) (mongo.WriteModel
 	case *mongo.ReplaceOneModel:
 		filter, err := setTenantField(m.Filter, tenantID)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "filter")
 		}
 		replacement, err := setTenantField(m.Replacement, tenantID)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "replacement")
 		}
 		cp := *m
 		cp.Filter = filter
@@ -94,7 +100,7 @@ func copyWriteModelWithInjectedFilter[T any](
 ) (*T, error) {
 	f, err := setTenantField(filter, tenantID)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "filter")
 	}
 	cp := *model
 	setFilter(&cp, f)

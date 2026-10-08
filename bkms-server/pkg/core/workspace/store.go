@@ -194,6 +194,11 @@ func (s *WorkspaceStoreMongo) Create(ctx context.Context, workspace *Workspace) 
 		workspace.CreatedAt = timeNow
 	}
 	workspace.UpdatedAt = timeNow
+	// 回写 tenant_id
+	// TODO: 如果后续多个 store 都出现同类需求，再抽一个显式回写的公共 helper；
+	if tenantID, ok := s.collection.TenantID(ctx); ok {
+		workspace.TenantID = tenantID
+	}
 
 	if _, err := s.collection.InsertOne(ctx, workspace); err != nil {
 		return err

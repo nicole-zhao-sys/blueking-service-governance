@@ -125,7 +125,7 @@ var _ = Describe("TenantAwareCollection", func() {
 			Expect(err).To(MatchError(reqtenant.ErrTenantIDRequired))
 		})
 
-		It("skips inject for platform collections", func() {
+		It("skips inject for global collections", func() {
 			c := newTestCollection("cluster_addon_defs")
 
 			got, err := c.applyFilterWithTenant(context.Background(), bson.M{"key": "x"})
@@ -177,6 +177,34 @@ var _ = Describe("TenantAwareCollection", func() {
 		})
 	})
 
+	Describe("TenantID", func() {
+		It("returns the context tenant for a tenant collection", func() {
+			c := newTestCollection("workspaces")
+			ctx := reqtenant.WithTenantID(context.Background(), tenantA)
+
+			got, ok := c.TenantID(ctx)
+			Expect(ok).To(BeTrue())
+			Expect(got).To(Equal(tenantA))
+		})
+
+		It("returns false when context has no tenant", func() {
+			c := newTestCollection("workspaces")
+
+			_, ok := c.TenantID(context.Background())
+			Expect(ok).To(BeFalse())
+		})
+
+		It("returns false for global collections and cross-tenant views", func() {
+			ctx := reqtenant.WithTenantID(context.Background(), tenantA)
+
+			_, globalOK := newTestCollection("cluster_addon_defs").TenantID(ctx)
+			Expect(globalOK).To(BeFalse())
+
+			_, crossOK := newTestCollection("workspaces").crossTenant().TenantID(ctx)
+			Expect(crossOK).To(BeFalse())
+		})
+	})
+
 	Describe("crossTenant", func() {
 		It("skips tenant injection for tenant collections", func() {
 			crossTenantCollection := newTestCollection("workspaces").crossTenant()
@@ -225,6 +253,22 @@ var _ = Describe("TenantAwareCollection", func() {
 			}))
 		})
 
+		It("rejects stages that bypass tenant isolation or must be first", func() {
+			c := newTestCollection("workspaces")
+			ctx := reqtenant.WithTenantID(context.Background(), tenantA)
+			blocked := []any{
+				mongo.Pipeline{{{Key: "$lookup", Value: bson.M{"from": "workspaces"}}}},
+				[]bson.M{{"$unionWith": "workspaces"}},
+				bson.A{bson.M{"$geoNear": bson.M{"near": bson.M{"type": "Point"}}}},
+				[]bson.D{{{Key: "$out", Value: "other"}}},
+			}
+			for _, pipeline := range blocked {
+				_, err := c.applyPipelineWithTenant(ctx, pipeline)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("is not allowed on tenant collection"))
+			}
+		})
+
 		It("returns error for unsupported pipeline type", func() {
 			c := newTestCollection("workspaces")
 			ctx := reqtenant.WithTenantID(context.Background(), tenantA)
@@ -246,6 +290,56 @@ var _ = Describe("TenantAwareCollection", func() {
 				bson.M{"id": "ws-1", reqtenant.FieldTenantID: tenantA},
 				bson.M{"id": "ws-2", reqtenant.FieldTenantID: tenantA},
 			}))
+		})
+	})
+
+	Describe("single result tenant errors", func() {
+		It("keeps ErrTenantIDRequired when FindOne has no tenant", func() {
+			c := newTestCollection("workspaces")
+
+			err := c.FindOne(context.Background(), bson.M{"id": "ws-1"}).Decode(&bson.M{})
+			Expect(err).To(MatchError(reqtenant.ErrTenantIDRequired))
+		})
+
+		It("keeps ErrTenantIDRequired when FindOneAndUpdate has no tenant", func() {
+			c := newTestCollection("workspaces")
+
+			err := c.FindOneAndUpdate(
+				context.Background(),
+				bson.M{"id": "ws-1"},
+				bson.M{"$set": bson.M{"name": "n"}},
+			).Decode(&bson.M{})
+			Expect(err).To(MatchError(reqtenant.ErrTenantIDRequired))
+		})
+
+		It("keeps ErrTenantIDRequired when FindOneAndDelete has no tenant", func() {
+			c := newTestCollection("workspaces")
+
+			err := c.FindOneAndDelete(context.Background(), bson.M{"id": "ws-1"}).Decode(&bson.M{})
+			Expect(err).To(MatchError(reqtenant.ErrTenantIDRequired))
+		})
+	})
+
+	Describe("tenant update guard", func() {
+		It("rejects updates that modify tenant_id", func() {
+			c := newTestCollection("workspaces")
+			ctx := reqtenant.WithTenantID(context.Background(), tenantA)
+			updates := []any{
+				bson.M{"$set": bson.M{reqtenant.FieldTenantID: "other"}},
+				bson.M{"$unset": bson.M{reqtenant.FieldTenantID: ""}},
+				bson.M{"$rename": bson.M{"name": reqtenant.FieldTenantID}},
+				mongo.Pipeline{{{Key: "$set", Value: bson.M{"name": "n"}}}},
+			}
+			for _, update := range updates {
+				_, err := c.UpdateOne(ctx, bson.M{"id": "ws-1"}, update)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).NotTo(ContainSubstring("document is nil"))
+			}
+		})
+
+		It("allows an update that does not touch tenant_id", func() {
+			err := ensureTenantImmutable(bson.M{"$set": bson.M{"displayName": "n"}})
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 
@@ -292,6 +386,34 @@ var _ = Describe("TenantAwareCollection", func() {
 			Expect(got[5].(*mongo.ReplaceOneModel).Replacement).To(Equal(
 				bson.M{"id": "ws-4", reqtenant.FieldTenantID: tenantA},
 			))
+		})
+
+		It("includes the model index, type, and failing part in the error", func() {
+			c := newTestCollection("workspaces")
+			ctx := reqtenant.WithTenantID(context.Background(), tenantA)
+			models := []mongo.WriteModel{
+				mongo.NewInsertOneModel().SetDocument(bson.M{"id": "ws-1"}),
+				mongo.NewUpdateOneModel().SetFilter(1).SetUpdate(bson.M{"$set": bson.M{"name": "n"}}),
+			}
+
+			_, err := c.applyWriteModelsWithTenant(ctx, models)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("bulk model #1"))
+			Expect(err.Error()).To(ContainSubstring("*mongo.UpdateOneModel"))
+			Expect(err.Error()).To(ContainSubstring("filter"))
+
+			_, err = c.applyWriteModelsWithTenant(ctx, []mongo.WriteModel{
+				mongo.NewInsertOneModel().SetDocument(1),
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("bulk model #0"))
+			Expect(err.Error()).To(ContainSubstring("document"))
+
+			_, err = c.applyWriteModelsWithTenant(ctx, []mongo.WriteModel{
+				mongo.NewReplaceOneModel().SetFilter(bson.M{"id": "ws-1"}).SetReplacement(1),
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("replacement"))
 		})
 	})
 })

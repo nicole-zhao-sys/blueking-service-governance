@@ -62,7 +62,7 @@ func NewRefreshWorkspaceBkmonitorPermsCmd() *cobra.Command {
 			database.InitClient(ctx, cfg.Mongo)
 			storereg.Init(ctx)
 
-			wsStore := storereg.G().WorkspaceStore
+			wsStore := storereg.G().WorkspaceStore.CrossTenant()
 
 			if dryRun {
 				dryRunRefreshWorkspaceBkmonitorPerms(ctx, wsStore, workspaceIDs)

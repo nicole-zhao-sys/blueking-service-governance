@@ -160,7 +160,7 @@ var _ = Describe("Test taskq exhausted handler", func() {
 		fn, ok := getExhaustedHandler(tt.Name())
 		Expect(ok).To(BeTrue())
 		payload := lo.Must(wrapEnvelope(
-			context.Background(),
+			tenant.WithTenantID(context.Background(), tenant.DefaultTenantID),
 			auth.User{ID: "tester"},
 			lo.Must(json.Marshal(sampleArgs{ID: "abc", Step: 7})),
 		))
@@ -227,7 +227,10 @@ var _ = Describe("Test taskq NewTask and Enqueue", func() {
 		task := tt.NewTask(sampleArgs{ID: "x"})
 		Expect(task).NotTo(BeNil())
 
-		ctx := auth.WithUser(context.Background(), auth.User{ID: "tester"})
+		ctx := tenant.WithTenantID(
+			auth.WithUser(context.Background(), auth.User{ID: "tester"}),
+			tenant.DefaultTenantID,
+		)
 		err := Enqueue(ctx, task)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("client not initialized"))
@@ -292,6 +295,25 @@ var _ = Describe("Test taskq auth envelope", func() {
 		Expect(gotUser.ID).To(Equal("bob"))
 		Expect(got.ID).To(Equal("x"))
 		Expect(got.Step).To(Equal(3))
+	})
+
+	It("wrapEnvelope returns error when context has no tenant", func() {
+		_, err := wrapEnvelope(context.Background(), auth.User{ID: "alice"}, []byte(`{"id":"x"}`))
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("tenant id not found"))
+	})
+
+	It("restoreEnvelope falls back to default tenant when envelope has no tenant id", func() {
+		payload := []byte(`{"_authUser":{"id":"alice"},"_args":{"id":"legacy"}}`)
+
+		restoredCtx, rawArgs := restoreEnvelope(context.Background(), payload)
+		gotTenantID, ok := tenant.GetTenantID(restoredCtx)
+		Expect(ok).To(BeTrue())
+		Expect(gotTenantID).To(Equal(tenant.DefaultTenantID))
+
+		var args sampleArgs
+		Expect(json.Unmarshal(rawArgs, &args)).To(Succeed())
+		Expect(args.ID).To(Equal("legacy"))
 	})
 
 	It("Handler still decodes raw args payload without envelope", func() {

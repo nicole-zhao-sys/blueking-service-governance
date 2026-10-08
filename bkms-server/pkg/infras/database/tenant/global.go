@@ -18,15 +18,15 @@
 
 package tenant
 
-// platformTables 平台表：不注入 tenant_id。集合名与对应 store 中的常量保持一致。
-var platformTables = map[string]struct{}{
-	"cluster_addon_defs":       {}, // pkg/core/env/clusteraddon
-	"depservice_services":      {}, // pkg/extension/depservice/model
-	"plat_admin_role_bindings": {}, // pkg/platmgt/admin
+// globalTables 全局表：没有 tenant_id，不注入。集合名与对应 store 中的常量保持一致。
+var globalTables = map[string]struct{}{
+	"cluster_addon_defs":       {},
+	"depservice_services":      {},
+	"plat_admin_role_bindings": {},
 }
 
-// isPlatform 判断集合是否为平台表。
-func isPlatform(name string) bool {
-	_, ok := platformTables[name]
+// isGlobal 判断集合是否为全局表。
+func isGlobal(name string) bool {
+	_, ok := globalTables[name]
 	return ok
 }

@@ -45,8 +45,12 @@ func userFromContext(ctx context.Context) (auth.User, error) {
 }
 
 // wrapEnvelope 把用户身份、租户上下文与业务 Args JSON 打成 envelope，身份不进入业务 Args。
+// ctx 没有租户时直接失败，避免任务入队后到 worker 里才暴露缺租户。
 func wrapEnvelope(ctx context.Context, user auth.User, argsPayload []byte) ([]byte, error) {
-	tenantID, _ := tenant.GetTenantID(ctx)
+	tenantID, ok := tenant.GetTenantID(ctx)
+	if !ok || tenantID == "" {
+		return nil, errors.New("taskq: tenant id not found in context")
+	}
 	return json.Marshal(payloadEnvelope{
 		AuthUser: user,
 		TenantID: tenantID,
@@ -64,8 +68,11 @@ func restoreEnvelope(ctx context.Context, payload []byte) (context.Context, []by
 	if env.AuthUser.ID != "" {
 		ctx = auth.WithUser(ctx, env.AuthUser)
 	}
-	if env.TenantID != "" {
-		ctx = tenant.WithTenantID(ctx, env.TenantID)
+	// 升级前已入队的任务没有 _tenantId。存量空间已回填为 default，这里回落，避免重试耗尽。
+	tenantID := env.TenantID
+	if tenantID == "" {
+		tenantID = tenant.DefaultTenantID
 	}
+	ctx = tenant.WithTenantID(ctx, tenantID)
 	return ctx, env.Args
 }

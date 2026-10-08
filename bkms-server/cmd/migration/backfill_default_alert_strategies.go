@@ -91,7 +91,7 @@ func NewBackfillDefaultAlertStrategiesCmd() *cobra.Command {
 			operator := auth.MustGetUser(ctx).ID
 			summary, err := runBackfillDefaultAlertStrategies(ctx, backfillDefaultAlertStrategiesDeps{
 				appStore:       storereg.G().AppStore,
-				workspaceStore: storereg.G().WorkspaceStore,
+				workspaceStore: storereg.G().WorkspaceStore.CrossTenant(),
 				strategyStore:  storereg.G().AlertStrategyStore,
 				resolveNoticeGroupIDs: func(ctx context.Context, ws *workspace.Workspace) ([]int64, error) {
 					return usergroup.ResolveDefaultAlertNoticeGroupIDs(
