@@ -53,7 +53,7 @@ type EnvNameQuery struct {
 
 // CreateDefInput 创建配置文件 def + 默认文件的请求体。
 type CreateDefInput struct {
-	// 文件名称
+	// 文件名称，仅支持数字、字母、下划线(_)、中划线(-)、点(.)，长度 1-64 之间。
 	Name string `json:"name" binding:"required,min=1,max=64,app_config_file_name"`
 	// 配置种类：framework / plain
 	ConfigKind string `json:"configKind" binding:"required,oneof=framework plain"`
@@ -260,6 +260,7 @@ func (o *DefDetailObj) fillFile(file *appcfg.AppConfigFile) {
 
 // UpdateDefInput 更新 def 信息请求体。
 type UpdateDefInput struct {
+	// 文件名称，仅支持数字、字母、下划线(_)、中划线(-)、点(.)，长度 1-64 之间。
 	Name               *string   `json:"name,omitempty" binding:"omitempty,min=1,max=64,app_config_file_name"`
 	MountDir           *string   `json:"mountDir,omitempty" binding:"omitempty,max=255,mount_dir"`
 	IsUnifiedConfig    *bool     `json:"isUnifiedConfig,omitempty"`
