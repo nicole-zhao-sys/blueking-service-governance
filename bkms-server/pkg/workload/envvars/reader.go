@@ -78,6 +78,10 @@ func (r *UnifiedEnvVarsReader) ListVars(
 	if am == nil {
 		return envVars, nil
 	}
+	// Resource limits are builtins, so they stay at the lowest priority.
+	// Scoped public vars, dependency/Polaris vars, and app vars all come later
+	// and override the same key.
+	envVars = append(resourceLimitBuiltinVars(am.Workload.Resources), envVars...)
 	// Append env vars defined in the AppModel, which have the highest priority.
 	for _, v := range am.Workload.EnvVars {
 		envVars = append(envVars, envvartypes.EnvVariableObj{

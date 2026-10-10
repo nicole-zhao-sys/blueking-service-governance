@@ -225,6 +225,110 @@ var _ = Describe("UnifiedEnvVarsReader", func() {
 		}))
 		Expect(vars.ToMap()["SHARED_KEY"]).To(Equal("app-value"))
 	})
+
+	DescribeTable("should inject CPU and memory limits as builtin env vars",
+		func(resources map[string]string, appEnvVars []appmodel.Variable, want map[string]string, absent []string) {
+			testApp := &bkmsapp.Application{ID: "app-1", Name: "test-app", Type: bkmsapp.AppTypeTRPC}
+			am := &appmodel.AppModel{
+				Workload: appmodel.Workload{
+					Resources: resources,
+					EnvVars:   appEnvVars,
+				},
+			}
+
+			vars, err := reader.ListVars(ctx, environment, testApp, am)
+			Expect(err).NotTo(HaveOccurred())
+
+			effective := vars.ToMap()
+			for key, value := range want {
+				Expect(effective).To(HaveKeyWithValue(key, value))
+			}
+			for _, key := range absent {
+				Expect(effective).NotTo(HaveKey(key))
+			}
+
+			overridden := lo.SliceToMap(appEnvVars, func(item appmodel.Variable) (string, struct{}) {
+				return item.Key, struct{}{}
+			})
+			byKey := envVarByKey(vars.ToDeduplicatedList())
+			for key := range want {
+				if _, ok := overridden[key]; ok {
+					continue
+				}
+				Expect(byKey[key].IsBuiltin).To(BeTrue())
+				Expect(byKey[key].ValueFrom).To(BeNil())
+				Expect(byKey[key].Placeholder).To(BeEmpty())
+			}
+		},
+		Entry("keeps the configured limit unit",
+			map[string]string{"cpu": "100m-200m", "memory": "512Mi-2Gi"},
+			nil,
+			map[string]string{"BKMS_CPU_LIMIT": "200m", "BKMS_MEMORY_LIMIT": "2Gi"},
+			nil,
+		),
+		Entry("preserves a single quantity as both request and limit",
+			map[string]string{"cpu": "0.2", "memory": "2048Mi"},
+			nil,
+			map[string]string{"BKMS_CPU_LIMIT": "0.2", "BKMS_MEMORY_LIMIT": "2048Mi"},
+			nil,
+		),
+		Entry("injects only the resource that is configured",
+			map[string]string{"memory": "256Mi"},
+			nil,
+			map[string]string{"BKMS_MEMORY_LIMIT": "256Mi"},
+			[]string{"BKMS_CPU_LIMIT"},
+		),
+		Entry("omits both variables when resources are unset",
+			nil,
+			nil,
+			nil,
+			[]string{"BKMS_CPU_LIMIT", "BKMS_MEMORY_LIMIT"},
+		),
+		Entry("skips a limit that is not a kubernetes quantity",
+			map[string]string{"cpu": "100m-bad", "memory": "2Gi"},
+			nil,
+			map[string]string{"BKMS_MEMORY_LIMIT": "2Gi"},
+			[]string{"BKMS_CPU_LIMIT"},
+		),
+		Entry("lets an app env var override the builtin limit",
+			map[string]string{"cpu": "100m-200m", "memory": "2Gi"},
+			[]appmodel.Variable{{Key: "BKMS_CPU_LIMIT", Value: "custom"}},
+			map[string]string{"BKMS_CPU_LIMIT": "custom", "BKMS_MEMORY_LIMIT": "2Gi"},
+			nil,
+		),
+	)
+
+	It("lets scoped public vars and app vars override builtin resource limits", func() {
+		seedScopedEnvVars(ctx, store, workspaceID)
+		_, err := store.Create(ctx, envvars.ScopedEnvVar{
+			WorkspaceID: workspaceID,
+			ScopeType:   envvartypes.ScopeTypeWorkspace,
+			Key:         "BKMS_CPU_LIMIT",
+			Value:       "from-workspace",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		_, err = store.CreateSimpleEnvScopeVar(
+			ctx,
+			environment,
+			"BKMS_MEMORY_LIMIT",
+			"from-env",
+			"",
+		)
+		Expect(err).NotTo(HaveOccurred())
+
+		testApp := &bkmsapp.Application{ID: "app-1", Name: "test-app", Type: bkmsapp.AppTypeTRPC}
+		am := &appmodel.AppModel{
+			Workload: appmodel.Workload{
+				Resources: map[string]string{"cpu": "100m-200m", "memory": "512Mi-2Gi"},
+				EnvVars:   []appmodel.Variable{{Key: "BKMS_CPU_LIMIT", Value: "from-app"}},
+			},
+		}
+
+		vars, err := reader.ListVars(ctx, environment, testApp, am)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(vars.ToMap()).To(HaveKeyWithValue("BKMS_CPU_LIMIT", "from-app"))
+		Expect(vars.ToMap()).To(HaveKeyWithValue("BKMS_MEMORY_LIMIT", "from-env"))
+	})
 })
 
 var _ = Describe("BuildEnvConflictedInfoByKeys", func() {
