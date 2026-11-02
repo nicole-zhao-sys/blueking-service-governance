@@ -18,8 +18,50 @@
 
 package bcs
 
+import (
+	"fmt"
+
+	"github.com/pkg/errors"
+)
+
+var (
+	// ErrNotFound BCS 接口返回 HTTP 404
+	ErrNotFound = errors.New("bcs: resource not found")
+	// ErrProjectNotFound BCS 项目不存在
+	ErrProjectNotFound = errors.New("bcs: project not found")
+)
+
+type apiError struct {
+	Operation  string
+	HTTPStatus int
+	Code       int
+	Message    string
+}
+
+func (e *apiError) Error() string {
+	return fmt.Sprintf(
+		"call bcs api %s failed, http code: %d, business code: %d, message: %s",
+		e.Operation,
+		e.HTTPStatus,
+		e.Code,
+		e.Message,
+	)
+}
+
 // UserTokenStatusActive 有效的 Token 状态
 const UserTokenStatusActive = 1
+
+// ProjectKindK8s BCS 容器项目类型
+const ProjectKindK8s = "k8s"
+
+// CreateProjectInput 创建 BCS 项目请求
+type CreateProjectInput struct {
+	Name        string
+	ProjectCode string
+	Kind        string
+	// BusinessID 可选，仅在已有 bkCC 业务 ID 时传入
+	BusinessID string
+}
 
 // Project BCS 项目信息
 type Project struct {
