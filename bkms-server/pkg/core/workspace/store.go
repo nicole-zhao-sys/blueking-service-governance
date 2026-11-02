@@ -57,7 +57,8 @@ type WorkspaceStore = store.GenericStore[Workspace]
 //
 // 索引（由 golang-migrate 维护）：
 // - 唯一：id
-// - 唯一（partial）：bkSystems.bkBcsProjectCode。BCS 项目是外部资源，跨租户也只能被一个工作空间绑定
+// - 唯一（partial）：bkSystems.bkBcsProjectCode。存的是 BCS 返回的 projectCode，本身全局唯一（多租户下为 {tenantID}-{code}），
+// 索引不需要带 tenantID
 // - 普通：tenantID
 var Meta = store.Meta[Workspace]{
 	Collection:   "workspaces",

@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	bcsmanager "github.com/TencentBlueKing/blueking-service-governance/bkms-server/pkg/bkintegrations/bcs"
 	bkcmdb "github.com/TencentBlueKing/blueking-service-governance/bkms-server/pkg/bkintegrations/cmdb"
 	"github.com/TencentBlueKing/blueking-service-governance/bkms-server/pkg/common/testutil"
 	"github.com/TencentBlueKing/blueking-service-governance/bkms-server/pkg/common/testutil/dbfactory"
@@ -144,14 +145,7 @@ var _ = Describe("ensureIndependentBCSProject", func() {
 				Return(nil, errors.New("should not create when project already exists")).
 				Build()
 
-			project, err := EnsureIndependentBCSProject(
-				ctx,
-				store,
-				"current-workspace",
-				"workspace-name",
-				"bkms-ws",
-				398,
-			)
+			project, err := EnsureIndependentBCSProject(ctx, store, "current-workspace", "workspace-name", 398)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(project.ID).To(Equal("bcs-uid"))
 			Expect(project.Code).To(Equal("bkms-ws"))
@@ -179,7 +173,7 @@ var _ = Describe("ensureIndependentBCSProject", func() {
 				BizID: "398",
 			}, nil).Build()
 
-			_, err := EnsureIndependentBCSProject(ctx, store, "current-workspace", "workspace-name", "bkms-ws", 398)
+			_, err := EnsureIndependentBCSProject(ctx, store, "current-workspace", "workspace-name", 398)
 			Expect(err).To(MatchError(ContainSubstring("already bound by workspace")))
 		})
 	})
@@ -198,37 +192,51 @@ var _ = Describe("ensureIndependentBCSProject", func() {
 				Return(nil, errors.New("should not create when conflicting project already exists")).
 				Build()
 
-			_, err := EnsureIndependentBCSProject(ctx, store, "current-workspace", "workspace-name", "bkms-ws", 398)
+			_, err := EnsureIndependentBCSProject(ctx, store, "current-workspace", "workspace-name", 398)
 			Expect(err).To(MatchError(ContainSubstring("belongs to biz 399, not requested biz 398")))
 		})
 	})
 
-	It("creates the BCS project when the deterministic code is not found", func() {
+	It("creates the BCS project with the deterministic id and stores the code returned by BCS", func() {
 		mockey.PatchConvey("create after not found", GinkgoT(), func() {
+			tenantID, _ := tenant.GetTenantID(ctx)
+			wantID := bcsmanager.WorkspaceProjectID(tenantID, "current-workspace")
+
 			mockey.Mock(auth.MustGetUser).Return(user).Build()
 			mockey.Mock(bcs.New).Return(bcs.NewStub(user), nil).Build()
-			mockey.Mock((*bcs.StubApiClient).GetProject).Return(nil, bcs.ErrProjectNotFound).Build()
-			mockey.Mock((*bcs.StubApiClient).CreateProject).Return(&bcs.Project{
-				ID:    "new-bcs-uid",
-				Code:  "bkms-ws",
-				Name:  "workspace-name",
-				Kind:  bcs.ProjectKindK8s,
-				BizID: "398",
-			}, nil).Build()
+			var lookedUp string
+			mockey.Mock((*bcs.StubApiClient).GetProject).To(
+				func(_ *bcs.StubApiClient, _ context.Context, id string) (*bcs.Project, error) {
+					lookedUp = id
+					return nil, bcs.ErrProjectNotFound
+				},
+			).Build()
+			var created bcs.CreateProjectInput
+			mockey.Mock((*bcs.StubApiClient).CreateProject).To(
+				func(_ *bcs.StubApiClient, _ context.Context, in bcs.CreateProjectInput) (*bcs.Project, error) {
+					created = in
+					// 模拟多租户 BCS 改写 projectCode
+					return &bcs.Project{
+						ID: in.ProjectID, Code: tenantID + "-" + in.ProjectCode, Kind: in.Kind, BizID: in.BusinessID,
+					}, nil
+				},
+			).Build()
 
-			project, err := EnsureIndependentBCSProject(
-				ctx,
-				store,
-				"current-workspace",
-				"workspace-name",
-				"bkms-ws",
-				398,
-			)
+			project, err := EnsureIndependentBCSProject(ctx, store, "current-workspace", "workspace-name", 398)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(project.ID).To(Equal("new-bcs-uid"))
-			Expect(project.Code).To(Equal("bkms-ws"))
+			Expect(lookedUp).To(Equal(wantID))
+			Expect(created.ProjectID).To(Equal(wantID))
+			Expect(created.ProjectCode).To(Equal("bkms-current-workspace"))
+			Expect(created.Name).To(Equal("workspace-name(current-workspace)"))
+			Expect(project.ID).To(Equal(wantID))
+			Expect(project.Code).To(Equal(tenantID + "-bkms-current-workspace"))
 			Expect(project.BizID).To(Equal("398"))
 		})
+	})
+
+	It("fails without tenant in context instead of guessing the project id", func() {
+		_, err := EnsureIndependentBCSProject(context.Background(), store, "current-workspace", "workspace-name", 398)
+		Expect(err).To(MatchError(tenant.ErrTenantIDRequired))
 	})
 })
 
@@ -312,12 +320,13 @@ var _ = Describe("prepareIndependentBCSBinding", func() {
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
+		ctx = testutil.NewDefaultTenantContext()
 		user = auth.User{ID: "tester"}
 	})
 
 	It("rejects auto create when the deterministic BCS project belongs to another biz", func() {
 		mockey.PatchConvey("bcs project belongs to another biz", GinkgoT(), func() {
+			tenantID, _ := tenant.GetTenantID(ctx)
 			mockey.Mock(auth.MustGetUser).Return(user).Build()
 			mockey.Mock(bkcmdb.NewService).Return(&fakeCMDBService{
 				getBusinessByID: func(ctx context.Context, bizID int64) (*bkcc.Business, error) {
@@ -325,14 +334,18 @@ var _ = Describe("prepareIndependentBCSBinding", func() {
 				},
 			}, nil).Build()
 			mockey.Mock(bcs.New).Return(bcs.NewStub(user), nil).Build()
-			mockey.Mock((*bcs.StubApiClient).GetProject).Return(&bcs.Project{
-				ID:    "bcs-uid",
-				Code:  "bkms-ws-1",
-				Kind:  bcs.ProjectKindK8s,
-				BizID: "399",
-			}, nil).Build()
+			var lookedUp string
+			mockey.Mock((*bcs.StubApiClient).GetProject).To(
+				func(_ *bcs.StubApiClient, _ context.Context, id string) (*bcs.Project, error) {
+					lookedUp = id
+					return &bcs.Project{
+						ID: id, Code: tenantID + "-bkms-ws-1", Kind: bcs.ProjectKindK8s, BizID: "399",
+					}, nil
+				},
+			).Build()
 
 			_, _, err := PrepareIndependentBCSBinding(ctx, nil, "ws-1", "", 398)
+			Expect(lookedUp).To(Equal(bcsmanager.WorkspaceProjectID(tenantID, "ws-1")))
 			Expect(err).To(MatchError(ErrBCSProjectAlreadyExists))
 			Expect(err.Error()).To(ContainSubstring("belongs to biz 399, not requested biz 398"))
 		})
@@ -360,7 +373,6 @@ var _ = Describe("prepareIndependentBCSBinding", func() {
 		var store *WorkspaceStore
 
 		BeforeEach(func() {
-			ctx = testutil.NewDefaultTenantContext()
 			store = testutil.NewStore(GinkgoT(), Meta)
 		})
 

@@ -171,12 +171,29 @@ var _ = Describe("BCS API Client", func() {
 		})
 	})
 
-	It("get project maps 404 to project not found", func() {
+	It("get project does not treat http-level errors as project not found", func() {
 		PatchConvey("test", GinkgoT(), func() {
-			Mock((*ApiClient).handleOperation).Return(nil, ErrNotFound).Build()
+			Mock((*ApiClient).handleOperation).
+				Return(nil, errors.New("call bcs api get_project failed, http code: 404, err: page not found")).
+				Build()
 
 			_, err := cli.GetProject(ctx, "missing")
-			Expect(errors.Is(err, ErrProjectNotFound)).To(BeTrue())
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, ErrProjectNotFound)).To(BeFalse())
+		})
+	})
+
+	It("get project does not treat other business codes as project not found", func() {
+		PatchConvey("test", GinkgoT(), func() {
+			Mock((*ApiClient).handleOperation).Return(nil, &apiError{
+				HTTPStatus: 200,
+				Code:       40403,
+				Message:    "项目不存在或无权限",
+			}).Build()
+
+			_, err := cli.GetProject(ctx, "missing")
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, ErrProjectNotFound)).To(BeFalse())
 		})
 	})
 
