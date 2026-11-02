@@ -325,14 +325,16 @@ DetailSyncTask = taskq.NewTaskType[ImageDetailSyncArgs](name, handle, opts...).G
 
 ### 8.1 调用蓝鲸平台接口
 
-- `pkg/infras/cloudapi` 下各网关 client 在统一请求入口调用 `tenant.TenantHeader(ctx)`，
-  把 ctx 中的租户写入 `X-Bk-Tenant-Id`。ctx 没有租户时不带这个头，**不回退为 `default`**，
-  多租户模式下由下游拒绝，避免请求被静默当成 `default` 租户处理。
-- IAM 鉴权走 iam-go-sdk，它只能在构造时设置租户，因此 `BKIAMClient` 按租户懒加载并缓存 sdk 实例，
+- `pkg/infras/cloudapi` 下各网关 client 构造时注册 `tenant.OptBkApiTenantHeader()`，每次请求发出前
+  按请求 ctx（`Operation.SetContext`）把租户写入 `X-Bk-Tenant-Id`，新增网关 client 时同样需要注册。
+  ctx 没有租户时不带这个头，**不回退为 `default`**，多租户模式下由下游拒绝，避免请求被静默当成 `default` 租户处理；
+  请求已显式设置该头时保持原值。
+- IAM 鉴权走 iam-go-sdk，它只能在构造时设置租户，因此 `BKIAMClient` 按租户懒加载并缓存 sdk 实例（每个租户只构造一次），
   `IsAllowed` / `BatchResourceMultiActionsAllowed` 及上层 `bkiam.IAMService`、`perm.LocalManager`
   的鉴权方法都接收 ctx。
 - bk-user 查询发生在租户校验中间件写入 ctx 之前，由 `GetUser` 显式传入待校验的租户；
-  用户不在该租户（404）映射为 `ErrTenantAccessDenied`。
+  只有 404 且 bk-user 返回 `NOT_FOUND` 业务码时才视为用户不在该租户，映射为 `ErrTenantAccessDenied`（原始错误记日志）。
+  网关自身的 404（带 `X-Bkapi-Error-Code`）、URL 配置错误等其他 404 按普通错误返回。
 - 不在此范围：用户认证后端（bk_login / bk_token / bk_ticket / usertoken）运行在租户解析之前；
   tof、txcmdb、polaris 不是蓝鲸多租户系统；镜像仓库与 k8s API 不是蓝鲸网关接口。
 
