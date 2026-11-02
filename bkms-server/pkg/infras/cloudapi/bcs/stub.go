@@ -108,10 +108,14 @@ func (s *StubApiClient) GetProject(ctx context.Context, id string) (*Project, er
 
 // CreateProject 模拟创建 BCS 项目
 func (s *StubApiClient) CreateProject(ctx context.Context, in CreateProjectInput) (*Project, error) {
-	log.Infof(ctx, "Stub: CreateProject request: code=%s name=%s kind=%s biz=%s",
-		in.ProjectCode, in.Name, in.Kind, in.BusinessID)
+	log.Infof(ctx, "Stub: CreateProject request: id=%s code=%s name=%s kind=%s biz=%s",
+		in.ProjectID, in.ProjectCode, in.Name, in.Kind, in.BusinessID)
+	id := in.ProjectID
+	if id == "" {
+		id = "stubcreatedstubcreatedstubcreated00"
+	}
 	return &Project{
-		ID:        "stubcreatedstubcreatedstubcreated00",
+		ID:        id,
 		Code:      in.ProjectCode,
 		Name:      in.Name,
 		Kind:      in.Kind,

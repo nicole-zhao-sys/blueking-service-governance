@@ -24,12 +24,8 @@ import (
 	"github.com/pkg/errors"
 )
 
-var (
-	// ErrNotFound BCS 接口返回 HTTP 404
-	ErrNotFound = errors.New("bcs: resource not found")
-	// ErrProjectNotFound BCS 项目不存在
-	ErrProjectNotFound = errors.New("bcs: project not found")
-)
+// ErrProjectNotFound BCS 项目不存在
+var ErrProjectNotFound = errors.New("bcs: project not found")
 
 type apiError struct {
 	Operation  string
@@ -56,7 +52,11 @@ const ProjectKindK8s = "k8s"
 
 // CreateProjectInput 创建 BCS 项目请求
 type CreateProjectInput struct {
-	Name        string
+	// ProjectID 可选，不传由 BCS 生成；多租户下 BCS 不改写 ID，可用于按 ID 回查
+	ProjectID string
+	// Name 项目名，BCS 要求全局唯一，长度 2-64
+	Name string
+	// ProjectCode 多租户下作为 tenantProjectCode，BCS 返回的 projectCode 为 {tenantID}-{ProjectCode}
 	ProjectCode string
 	Kind        string
 	// BusinessID 可选，仅在已有 bkCC 业务 ID 时传入

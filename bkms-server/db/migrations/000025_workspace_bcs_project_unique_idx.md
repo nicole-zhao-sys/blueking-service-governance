@@ -2,7 +2,7 @@
 
 - workspaces 新建索引：
   - bkSystems.bkBcsProjectCode_1 (unique, partial): `workspace.Create` / 工作空间创建流程：同一个 BCS project code 只能被一个 workspace 绑定；仅当 `bkSystems.bkBcsProjectCode` 非空时生效，用于兜底显式绑定和自动复用路径的并发竞态。
-  - 索引不带 `tenantID`：BCS 项目是外部资源，不属于任何租户，不同租户的 workspace 也不能绑定同一个 BCS 项目（见 `design_notes/tenant_isolation.md` 7.1）。
+  - 索引不带 `tenantID`：字段存的是 BCS 返回的 projectCode，BCS 保证它全局唯一（多租户下为 `{tenantID}-{tenantProjectCode}`，`tenantProjectCode` 才是租户内唯一的那个），全局唯一索引与租户内唯一效果相同（见 `design_notes/tenant_isolation.md` 7.1）。
 
 ## 升级前检查
 

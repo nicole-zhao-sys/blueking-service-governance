@@ -23,8 +23,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
-	"strings"
 	"time"
 
 	"github.com/TencentBlueKing/bk-apigateway-sdks/core/bkapi"
@@ -195,18 +193,11 @@ func (c *ApiClient) GetProject(ctx context.Context, id string) (*Project, error)
 	return project, nil
 }
 
+// isProjectNotFoundError 只认 BCS 的业务码：项目不存在时 BCS 返回 HTTP 200 + code 40404。
+// HTTP 404 来自网关或路由（如地址配置错误），不能当作项目不存在，否则会误走自动创建
 func isProjectNotFoundError(err error) bool {
-	if errors.Is(err, ErrNotFound) {
-		return true
-	}
-
 	var apiErr *apiError
-	if !errors.As(err, &apiErr) {
-		return false
-	}
-
-	return apiErr.Code == projectNotFoundBusinessCode ||
-		strings.Contains(apiErr.Message, "项目不存在")
+	return errors.As(err, &apiErr) && apiErr.Code == projectNotFoundBusinessCode
 }
 
 // CreateProject 创建 BCS 项目
@@ -215,6 +206,9 @@ func (c *ApiClient) CreateProject(ctx context.Context, in CreateProjectInput) (*
 		"name":        in.Name,
 		"projectCode": in.ProjectCode,
 		"kind":        in.Kind,
+	}
+	if in.ProjectID != "" {
+		body["projectID"] = in.ProjectID
 	}
 	if in.BusinessID != "" {
 		body["businessID"] = in.BusinessID
@@ -365,12 +359,8 @@ func (c *ApiClient) handleOperation(
 		if len(errMsg) == 0 {
 			errMsg, _ = json.Marshal(result)
 		}
-		apiErr := errors.Errorf("call bcs api %s failed, http code: %d, err: %s",
+		return nil, errors.Errorf("call bcs api %s failed, http code: %d, err: %s",
 			apiOperation.FullName(), resp.StatusCode, errMsg)
-		if resp.StatusCode == http.StatusNotFound {
-			return nil, errors.Wrap(ErrNotFound, apiErr.Error())
-		}
-		return nil, apiErr
 	}
 
 	if cast.ToInt(result["code"]) != 0 {

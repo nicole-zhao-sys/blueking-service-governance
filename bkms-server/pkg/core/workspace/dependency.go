@@ -37,6 +37,7 @@ import (
 	"github.com/TencentBlueKing/blueking-service-governance/bkms-server/pkg/infras/cloudapi/bcs"
 	bkciapi "github.com/TencentBlueKing/blueking-service-governance/bkms-server/pkg/infras/cloudapi/bkci"
 	"github.com/TencentBlueKing/blueking-service-governance/bkms-server/pkg/infras/perm"
+	"github.com/TencentBlueKing/blueking-service-governance/bkms-server/pkg/infras/tenant"
 	"github.com/TencentBlueKing/blueking-service-governance/bkms-server/pkg/store"
 	bkmsreg "github.com/TencentBlueKing/blueking-service-governance/bkms-server/pkg/workload/image/registry"
 )
@@ -115,13 +116,7 @@ func ensureBkSystemsWithIndependentBCSProject(
 	}
 
 	bcsProject, err := resolveIndependentBCSProjectForWorkspace(
-		ctx,
-		workspaces,
-		workspaceID,
-		displayName,
-		bkci.DefaultProjectCode(workspaceID),
-		bizID,
-		boundBCSProject,
+		ctx, workspaces, workspaceID, displayName, bizID, boundBCSProject,
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "resolve workspace bcs project")
@@ -154,7 +149,7 @@ func prepareIndependentBCSBinding(
 		if err := validateIndependentWorkspaceBiz(ctx, bizID); err != nil {
 			return nil, nil, err
 		}
-		// 自动创建前确认确定性 BCS code 不存在，或属于本次重试可复用的项目。
+		// 自动创建前确认确定性 BCS projectID 不存在，或属于本次重试可复用的项目。
 		// 业务不一致或已被其他 workspace 绑定时，在创建蓝盾资源之前失败。
 		if err := ensureAutoCreateBCSProjectReusable(ctx, workspaces, workspaceID, bizID); err != nil {
 			return nil, nil, err
@@ -198,14 +193,14 @@ func initializeIndependentBKCIResources(
 func resolveIndependentBCSProjectForWorkspace(
 	ctx context.Context,
 	workspaces *WorkspaceStore,
-	workspaceID, displayName, projectCode string,
+	workspaceID, displayName string,
 	bizID int64,
 	boundBCSProject *bcs.Project,
 ) (*bcs.Project, error) {
 	if boundBCSProject != nil {
 		return boundBCSProject, nil
 	}
-	return ensureIndependentBCSProject(ctx, workspaces, workspaceID, displayName, projectCode, bizID)
+	return ensureIndependentBCSProject(ctx, workspaces, workspaceID, displayName, bizID)
 }
 
 func buildBkSystems(
@@ -268,19 +263,22 @@ func validateIndependentWorkspaceBiz(ctx context.Context, bizID int64) error {
 func ensureAutoCreateBCSProjectReusable(
 	ctx context.Context, workspaces *WorkspaceStore, workspaceID string, bizID int64,
 ) error {
-	projectCode := bkci.DefaultProjectCode(workspaceID)
-	project, err := bcsmanager.NewProjectManager().LoadBoundProject(ctx, projectCode)
+	projectID, err := independentBCSProjectID(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	project, err := bcsmanager.NewProjectManager().LoadBoundProject(ctx, projectID)
 	if err != nil {
 		if errors.Is(err, bcs.ErrProjectNotFound) {
 			return nil
 		}
-		return errors.Wrapf(err, "check bcs project %s before create", projectCode)
+		return errors.Wrapf(err, "check bcs project %s before create", projectID)
 	}
 	if cast.ToInt64(project.BizID) != bizID {
 		return errors.Wrapf(
 			ErrBCSProjectAlreadyExists,
 			"bcs project(%s) belongs to biz %s, not requested biz %d",
-			projectCode,
+			project.Code,
 			project.BizID,
 			bizID,
 		)
@@ -291,10 +289,28 @@ func ensureAutoCreateBCSProjectReusable(
 	return nil
 }
 
+// independentBCSProjectID 返回工作空间独立 BCS 项目的确定性 projectID，自动创建与重试回查都使用它
+func independentBCSProjectID(ctx context.Context, workspaceID string) (string, error) {
+	tenantID, ok := tenant.GetTenantID(ctx)
+	if !ok {
+		return "", errors.Wrapf(tenant.ErrTenantIDRequired, "bcs project id of workspace %s", workspaceID)
+	}
+	return bcsmanager.WorkspaceProjectID(tenantID, workspaceID), nil
+}
+
 func ensureIndependentBCSProject(
-	ctx context.Context, workspaces *WorkspaceStore, workspaceID, displayName, projectCode string, bizID int64,
+	ctx context.Context, workspaces *WorkspaceStore, workspaceID, displayName string, bizID int64,
 ) (*bcs.Project, error) {
-	project, err := bcsmanager.NewProjectManager().EnsureProject(ctx, displayName, projectCode, bizID)
+	projectID, err := independentBCSProjectID(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	project, err := bcsmanager.NewProjectManager().EnsureProject(ctx, bcsmanager.ProjectSpec{
+		ID:    projectID,
+		Code:  bkci.DefaultProjectCode(workspaceID),
+		Name:  bcsmanager.WorkspaceProjectName(displayName, workspaceID),
+		BizID: bizID,
+	})
 	if err != nil {
 		return nil, errors.Wrap(err, "ensure bcs project")
 	}
@@ -383,7 +399,8 @@ func IndependentBCSProjectEnabled() bool {
 }
 
 // ensureBCSProjectNotBound 检查 BCS 项目未被其他工作空间绑定。
-// BCS 项目是外部资源，不属于任何租户，因此跨租户查找，避免两个租户的工作空间绑定同一个项目
+// 存储的 projectID / projectCode 都是 BCS 返回值，全局唯一（多租户下 projectCode 为 {tenantID}-{code}），
+// 因此不按租户过滤，与唯一索引 bkSystems.bkBcsProjectCode 的范围保持一致
 func ensureBCSProjectNotBound(
 	ctx context.Context, workspaces *WorkspaceStore, workspaceID string, project *bcs.Project,
 ) error {
