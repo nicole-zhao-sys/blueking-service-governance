@@ -338,9 +338,26 @@ DetailSyncTask = taskq.NewTaskType[ImageDetailSyncArgs](name, handle, opts...).G
 
 ### 8.2 Redis 锁与缓存
 
-- 资源属于某个租户（应用部署、工作空间默认告警组等）时，key 用 `tenant.ScopedKey(ctx, key)` 加
-  `tenant:<tenantID>:` 前缀；加锁与释放必须使用同一租户的 ctx，否则释放的不是同一个 key。
+- 资源属于某个租户（应用部署、工作空间默认告警组等）时，key 加 `tenant:<tenantID>:` 前缀
+  （`tenant.ScopedKey`，锁使用 `lock.NewTenantRedisLock`）；加锁与释放必须使用同一租户的 ctx，
+  否则释放的不是同一个 key。
 - 资源是多个租户共享的物理资源（集群组件安装锁、k8s discovery 缓存等）时**不加前缀**：
   同一集群 / 命名空间必须跨租户互斥，加前缀反而会让两个租户同时操作同一资源。
 - 每个 key 的定义处用注释说明它属于哪一类。
-- key 格式变化后，升级时旧格式的锁不会被新代码识别，只能等待超时释放。
+
+#### 升级兼容（过渡实现，后续版本移除）
+
+改造前锁的 key 不带租户前缀。滚动升级期间新旧版本实例并存，如果新版本只用带前缀的 key，
+新旧实例互不感知：同一应用 / 环境 / 泳道可被两个实例同时部署，升级前在途部署持有的旧锁也拦不住新请求。
+
+因此过渡期 `lock.NewTenantRedisLock` 按「旧 key -> 新 key」的固定顺序同时持有两个 key，
+后者获取失败时释放已获取的旧 key；释放时两个 key 都删除：
+
+| 场景 | 结果 |
+| --- | --- |
+| 新旧实例同时操作同一资源 | 都需要旧 key，互斥有效 |
+| 升级前在途操作持有的旧锁 | 新版本拿不到旧 key，请求被拒绝 |
+| 新实例投递的部署轮询任务被旧 worker 消费 | 旧代码只删旧 key，新 key 残留到锁超时（默认 20 分钟）后过期，期间该资源被多锁一段时间，但不会并发部署 |
+
+代码中以 `TODO(tenant-lock-compat)` 标记。移除条件：所有旧版本实例下线，且已超过一个锁超时时间；
+移除时 `NewTenantRedisLock` 改为只使用 `tenant.ScopedKey` 生成的单个 key。
