@@ -29,6 +29,7 @@ import (
 	"github.com/TencentBlueKing/bk-apigateway-sdks/core/define"
 	"github.com/TencentBlueKing/gopkg/mapx"
 	"github.com/pkg/errors"
+	"github.com/samber/lo"
 	"github.com/spf13/cast"
 
 	"github.com/TencentBlueKing/blueking-service-governance/bkms-server/pkg/common/config"
@@ -40,7 +41,9 @@ import (
 	"github.com/TencentBlueKing/blueking-service-governance/bkms-server/pkg/observability/metrics"
 )
 
-const projectNotFoundBusinessCode = 40404
+// projectNotFoundBusinessCodes BCS 项目不存在时返回的业务码：
+// 40404 为 bcs-project-manager 直接返回，1405516 为经 bcs-api-gateway 转发后返回（message: project is not exists）
+var projectNotFoundBusinessCodes = []int{40404, 1405516}
 
 // Client BCS API 客户端接口
 type Client interface {
@@ -193,11 +196,11 @@ func (c *ApiClient) GetProject(ctx context.Context, id string) (*Project, error)
 	return project, nil
 }
 
-// isProjectNotFoundError 只认 BCS 的业务码：项目不存在时 BCS 返回 HTTP 200 + code 40404。
+// isProjectNotFoundError 只认 BCS 的业务码：项目不存在时 BCS 返回 HTTP 200 + projectNotFoundBusinessCodes。
 // HTTP 404 来自网关或路由（如地址配置错误），不能当作项目不存在，否则会误走自动创建
 func isProjectNotFoundError(err error) bool {
 	var apiErr *apiError
-	return errors.As(err, &apiErr) && apiErr.Code == projectNotFoundBusinessCode
+	return errors.As(err, &apiErr) && lo.Contains(projectNotFoundBusinessCodes, apiErr.Code)
 }
 
 // CreateProject 创建 BCS 项目

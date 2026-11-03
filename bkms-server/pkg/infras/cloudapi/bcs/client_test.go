@@ -197,18 +197,22 @@ var _ = Describe("BCS API Client", func() {
 		})
 	})
 
-	It("get project maps business not found error to project not found", func() {
-		PatchConvey("test", GinkgoT(), func() {
-			Mock((*ApiClient).handleOperation).Return(nil, &apiError{
-				HTTPStatus: 200,
-				Code:       40404,
-				Message:    "项目不存在",
-			}).Build()
+	DescribeTable("get project maps business not found error to project not found",
+		func(code int, message string) {
+			PatchConvey("test", GinkgoT(), func() {
+				Mock((*ApiClient).handleOperation).Return(nil, &apiError{
+					HTTPStatus: 200,
+					Code:       code,
+					Message:    message,
+				}).Build()
 
-			_, err := cli.GetProject(ctx, "missing")
-			Expect(errors.Is(err, ErrProjectNotFound)).To(BeTrue())
-		})
-	})
+				_, err := cli.GetProject(ctx, "missing")
+				Expect(errors.Is(err, ErrProjectNotFound)).To(BeTrue())
+			})
+		},
+		Entry("returned by bcs-project-manager", 40404, "项目不存在"),
+		Entry("forwarded by bcs-api-gateway", 1405516, "project is not exists"),
+	)
 
 	It("get project returns error when data is empty", func() {
 		PatchConvey("test", GinkgoT(), func() {
