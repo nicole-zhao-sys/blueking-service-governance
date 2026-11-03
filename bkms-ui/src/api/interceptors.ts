@@ -31,6 +31,7 @@ export type Config = {
   prefix?: string;
   queryParams?: Record<string, unknown>; // PUT/POST 等请求需要额外携带的 query 参数
   responseType?: 'blob' | 'json' | 'text';
+  tenantHeader?: boolean; // 是否携带当前租户请求头，默认true；跨域访问其他平台的接口需关闭，避免对方 CORS 未放行该请求头
   validateCode?: boolean; // 校验code是否正确，默认true
 } & RequestInit;
 

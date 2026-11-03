@@ -22,7 +22,7 @@
       v-model="internalValue"
       :api-base-url="bkUserApiUrl"
       :current-user-id="currentUserId"
-      :tenant-id="tenantId"
+      :tenant-id="resolvedTenantId"
       v-bind="$attrs"
     />
     <Close
@@ -38,6 +38,7 @@
 
   import BkUserSelector from '@blueking/bk-user-selector';
   import { Close } from 'bkui-vue/lib/icon';
+  import { useUserStore } from '~/stores/user';
 
   import '@blueking/bk-user-selector/vue3/vue3.css';
 
@@ -49,16 +50,19 @@
     /** 快捷选中"我"时需要填写 */
     currentUserId?: string;
     modelValue?: string[];
-    // 租户 ID
+    // 租户 ID，未传时使用当前登录用户的租户
     tenantId?: string;
   }
 
   const props = withDefaults(defineProps<Props>(), {
     modelValue: () => [],
     currentUserId: '',
-    tenantId: 'default',
+    tenantId: '',
     clearable: false,
   });
+
+  const userStore = useUserStore();
+  const resolvedTenantId = computed(() => props.tenantId || userStore.userInfo.tenant_id || 'default');
 
   /** API 基础地址：开发走 Vite 代理，生产拼完整 URL */
   const bkUserApiUrl = (() => {

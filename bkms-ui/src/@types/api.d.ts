@@ -96,6 +96,8 @@ export interface IProjectPerm {
 type ExtractData<T> = T extends { data: infer D } ? D : undefined;
 
 interface IUser {
+  // 认证上游未返回租户时为空（如单租户环境）
+  tenant_id?: string;
   user_id: string;
 }
 
