@@ -99,6 +99,8 @@ func New(user auth.User) (Client, error) {
 		Stage:        config.G.BkApiStages.BkCI,
 		ClientOptions: []define.BkApiClientOption{
 			bkapi.OptSetRequestHeader("x-bkapi-authorization", string(authorization)),
+			// X-DEVOPS-UID 是蓝盾用户态接口的临时兼容头，部分环境仍用它识别调用用户，值与 bk_username 一致。
+			bkapi.OptSetRequestHeader("X-DEVOPS-UID", user.ID),
 			tenant.OptBkApiTenantHeader(),
 			bkapi.OptJsonResultProvider(),
 			bkapi.OptJsonBodyProvider(),

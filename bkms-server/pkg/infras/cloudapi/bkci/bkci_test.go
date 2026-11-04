@@ -20,10 +20,13 @@ package bkci
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/TencentBlueKing/blueking-service-governance/bkms-server/pkg/common/config"
 	"github.com/TencentBlueKing/blueking-service-governance/bkms-server/pkg/infras/account/auth"
 )
 
@@ -311,5 +314,34 @@ var _ = Describe("parseBuildLog", func() {
 		Expect(buildLog).To(BeNil())
 		Expect(err).To(MatchError(BuildLogExpired))
 		Expect(err.Error()).To(Equal(BuildLogExpired.Error()))
+	})
+})
+
+var _ = Describe("ApiClient", func() {
+	It("sends X-DEVOPS-UID with the authenticated user id", func() {
+		gotUID := make(chan string, 1)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotUID <- r.Header.Get("X-DEVOPS-UID")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"code":0,"status":0,"data":[]}`))
+		}))
+		DeferCleanup(server.Close)
+
+		original := config.G
+		config.G = &config.Config{}
+		config.G.Development.UseStubBkCI = false
+		config.G.BkPlatUrls.BkApiUrlTmpl = server.URL
+		config.G.BkApiStages.BkCI = "prod"
+		DeferCleanup(func() { config.G = original })
+
+		client, err := New(auth.User{
+			ID:   "7bahiycwyprugcwn",
+			Cred: auth.UserCredential{BkToken: "token"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		_, err = client.ListProjects(context.Background())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(<-gotUID).To(Equal("7bahiycwyprugcwn"))
 	})
 })
