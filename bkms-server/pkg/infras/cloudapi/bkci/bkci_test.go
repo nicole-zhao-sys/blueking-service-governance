@@ -22,6 +22,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -318,13 +319,8 @@ var _ = Describe("parseBuildLog", func() {
 })
 
 var _ = Describe("ApiClient", func() {
-	It("sends X-DEVOPS-UID with the authenticated user id", func() {
-		gotUID := make(chan string, 1)
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			gotUID <- r.Header.Get("X-DEVOPS-UID")
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"code":0,"status":0,"data":[]}`))
-		}))
+	newClientWithServer := func(handler http.HandlerFunc) Client {
+		server := httptest.NewServer(handler)
 		DeferCleanup(server.Close)
 
 		original := config.G
@@ -339,9 +335,45 @@ var _ = Describe("ApiClient", func() {
 			Cred: auth.UserCredential{BkToken: "token"},
 		})
 		Expect(err).NotTo(HaveOccurred())
+		return client
+	}
 
-		_, err = client.ListProjects(context.Background())
+	It("sends X-DEVOPS-UID with the authenticated user id", func() {
+		gotUID := make(chan string, 1)
+		client := newClientWithServer(func(w http.ResponseWriter, r *http.Request) {
+			gotUID <- r.Header.Get("X-DEVOPS-UID")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"code":0,"status":0,"data":[]}`))
+		})
+
+		_, err := client.ListProjects(context.Background())
 		Expect(err).NotTo(HaveOccurred())
 		Expect(<-gotUID).To(Equal("7bahiycwyprugcwn"))
+	})
+
+	It("includes status code and raw body when the response is not json", func() {
+		client := newClientWithServer(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte("Client sent an HTTP request to an HTTPS server."))
+		})
+
+		_, err := client.CreatePipeline(context.Background(), "demo", "name", "desc", nil)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("v4_user_pipeline_create"))
+		Expect(err.Error()).To(ContainSubstring("400"))
+		Expect(err.Error()).To(ContainSubstring("Client sent an HTTP request to an HTTPS server."))
+	})
+
+	It("truncates a long non-json body in the error", func() {
+		longBody := "C" + strings.Repeat("x", 2000)
+		client := newClientWithServer(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(longBody))
+		})
+
+		_, err := client.ListProjects(context.Background())
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("status code: 200"))
+		Expect(err.Error()).NotTo(ContainSubstring(longBody))
+		Expect(err.Error()).To(ContainSubstring(longBody[:maxErrorBodyLen]))
 	})
 })

@@ -968,7 +968,8 @@ func (c *ApiClient) handleOperation(
 	defer metrics.ClientRequest("bkci", apiOperation.FullName(), started, &err)
 
 	ctx, span := apm.StartClientSpan(ctx, "bkci", opName)
-	resp, err := apiOperation.SetContext(ctx).SetResult(&result).Request()
+	// 不使用 SetResult 让 SDK 解码：SDK 解码失败时会丢弃响应原文，排查网关返回非 JSON 的问题时无从下手
+	resp, err := apiOperation.SetContext(ctx).Request()
 	defer apm.EndClientSpan(span, resp, &err)
 	if err != nil {
 		return nil, err
@@ -979,6 +980,17 @@ func (c *ApiClient) handleOperation(
 	// 404 错误 -> 蓝盾资源不存在
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, ObjectNotFound
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, errors.Wrapf(err, "read bkci api %s response body", opName)
+	}
+	if err = json.Unmarshal(body, &result); err != nil {
+		return nil, errors.Wrapf(
+			err, "decode bkci api %s response, status code: %d, body: %s",
+			opName, resp.StatusCode, truncateBody(body),
+		)
 	}
 	// 根据返回码判断是否失败
 	// 蓝鲸网关错误码字段是 Code，蓝盾错误码字段是 Status
@@ -1001,6 +1013,17 @@ func (c *ApiClient) handleOperation(
 		return nil, newBusinessError(opName, code, status, result)
 	}
 	return result, nil
+}
+
+// maxErrorBodyLen 错误信息中保留的响应体最大长度，避免把大段 HTML 等内容写进错误和日志
+const maxErrorBodyLen = 512
+
+// truncateBody 截断响应体用于错误信息展示
+func truncateBody(body []byte) string {
+	if len(body) <= maxErrorBodyLen {
+		return string(body)
+	}
+	return string(body[:maxErrorBodyLen]) + "...(truncated)"
 }
 
 // newHTTPError 构造 HTTP 非 2xx 场景的错误
