@@ -21,7 +21,6 @@ import { clone, isObject, merge } from 'lodash-es';
 import { objectToQueryParams } from '~/common/util';
 
 import { type Config, fetch, interceptors } from './interceptors';
-import { getCurrentTenantID, TENANT_ID_HEADER } from './tenant';
 import { appendTraceId, appendTraceIdToDetails, attachTraceId, getTraceId } from './trace-id';
 
 // 后端错误明细中的 extras 会携带权限申请所需的角色用户组 ID。
@@ -68,19 +67,6 @@ function getOccupiedNamespaceError(status: number, res: ResponseData) {
     details: extras,
   };
 }
-
-// 多租户模式下 bkms-server 业务接口要求携带租户头；单租户环境租户为空，不携带
-interceptors.request.use(config => {
-  const tenantID = getCurrentTenantID();
-  if (!config.tenantHeader || !tenantID) return config;
-  return {
-    ...config,
-    headers: {
-      ...(config.headers as Record<string, string>),
-      [TENANT_ID_HEADER]: tenantID,
-    },
-  };
-});
 
 interceptors.response.use(
   async (response: Response, config: Config) => {
@@ -260,7 +246,6 @@ export default class ConsoleFetch {
         redirect: 'follow',
         referrerPolicy: 'no-referrer-when-downgrade',
         responseType: 'json',
-        tenantHeader: true,
         validateCode: false,
         interceptorErr: true,
       },

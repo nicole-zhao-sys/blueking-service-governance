@@ -21,7 +21,6 @@ import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
 import { getUser } from '~/api/modules/user';
 import { AccountService } from '~/api/modules/v1/account';
-import { setCurrentTenantID } from '~/api/tenant';
 
 import type { IUser } from '~/@types/api';
 import type { RoleInfo } from '~/@types/v1/account';
@@ -35,7 +34,7 @@ export const useUserStore = defineStore('user', () => {
   const hasPlatformRole = computed(() => !!roleInfo.value?.platRoleCode);
 
   async function getUserInfo() {
-    setUserInfo(await getUser({}, { needRes: true }).catch(() => ({ user_id: '' })));
+    userInfo.value = await getUser({}, { needRes: true }).catch(() => ({ user_id: '' }));
   }
 
   async function getRoleInfo() {
@@ -44,7 +43,6 @@ export const useUserStore = defineStore('user', () => {
 
   function setUserInfo(user: IUser) {
     userInfo.value = user;
-    setCurrentTenantID(user.tenant_id);
   }
 
   return {

@@ -20,7 +20,6 @@ import Fetch from '~/api/fetch';
 
 const fetch = new Fetch({
   prefix: import.meta.env.BK_NODE_ENV === 'development' ? '' : `${import.meta.env.BK_BCS_API_BASE_URL}`,
-  tenantHeader: false,
 });
 
 // ===========bcs==========
@@ -46,7 +45,6 @@ export const userPermsByAction = fetch.post('/bcsapi/v4/usermanager/v1/iam/user_
 // 获取代码库列表
 const repoFetch = new Fetch({
   prefix: import.meta.env.BK_NODE_ENV === 'development' ? '' : `${import.meta.env.BK_REPO_URL}`,
-  tenantHeader: false,
 });
 export const getGitProjects = repoFetch.get<any, any>('/ms/repository/api/user/git/getProject');
 // 获取流水线列表

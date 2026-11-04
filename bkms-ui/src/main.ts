@@ -64,9 +64,8 @@ getUser({}, { needRes: true }).then(res => {
     i.install?.({ app });
   });
   registerMonitorChartApi(app);
-  // 挂载前写入用户信息，首屏业务请求才能带上租户头
-  useUserStore().setUserInfo(res);
   app.mount('#app');
+  useUserStore().setUserInfo(res);
 });
 
 console.log(
