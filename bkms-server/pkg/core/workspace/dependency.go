@@ -182,8 +182,11 @@ func initializeIndependentBKCIResources(
 	if err != nil {
 		return nil, err
 	}
-	if err = initializeDefaultBKCIPipelines(ctx, db, workspaceID); err != nil {
-		return nil, err
+	// TODO: 临时跳过 dockerfile 流水线：当前独立 BCS 环境的蓝盾缺少模板依赖的「构建并推送 Docker 镜像」插件，
+	// 预建会失败；该流水线在首次以 Dockerfile 方式构建时仍会创建。环境装好插件后改回 initializeDefaultBKCIPipelines
+	_, err = bkci.NewPipelineManager(db, workspaceID).Initialize(ctx, string(bkci.PipelineTypeHelmGitBuild))
+	if err != nil {
+		return nil, errors.Wrap(err, "create builtin helm-git-build pipeline")
 	}
 	if err = bkrepo.NewProjectManager(db, workspaceID, auth.MustGetUser(ctx).ID).Initialize(ctx); err != nil {
 		return nil, errors.Wrap(err, "init bkrepo project")
