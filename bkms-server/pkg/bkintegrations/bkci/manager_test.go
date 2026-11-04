@@ -177,9 +177,37 @@ var _ = Describe("ProjectManager Initialize", func() {
 				Expect(proj.Code).To(Equal("bkms-test-workspace"))
 			})
 		})
+
+		// stub 客户端的 GetProject 总是成功，Initialize 走不到创建分支，因此直接测 createBKCIProject
+		It("should create bkci project without querying tof when user organization is skipped", func() {
+			mockey.PatchConvey("test", GinkgoT(), func() {
+				mockey.Mock(auth.MustGetUser).Return(mockUser()).Build()
+				orgMocker := mockey.Mock(tof.GetUserOrganization).
+					Return(nil, errors.New("tof api not found")).Build()
+
+				proj, err := manager.SkipUserOrganization().createBKCIProject(ctx, managerTestProjectCode, "", "")
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(proj.Code).To(Equal(managerTestProjectCode))
+				Expect(orgMocker.Times()).To(BeZero())
+			})
+		})
 	})
 
 	Context("Error Scenarios", func() {
+		It("should fail creating bkci project when querying user organization fails by default", func() {
+			mockey.PatchConvey("test", GinkgoT(), func() {
+				mockey.Mock(auth.MustGetUser).Return(mockUser()).Build()
+				mockey.Mock(tof.GetUserOrganization).Return(nil, errors.New("tof api not found")).Build()
+
+				proj, err := manager.createBKCIProject(ctx, managerTestProjectCode, "", "")
+
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("organization"))
+				Expect(proj).To(BeNil())
+			})
+		})
+
 		It("should fail when workspace has different project", func() {
 			existingProj := mockProject()
 			existingProj.Code = "another-project"

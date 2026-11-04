@@ -46,11 +46,20 @@ var ErrBuildTriggerPipelineRequireEnsure = errors.New(
 type ProjectManager struct {
 	db          *mongo.Database
 	workspaceID string
+	// skipUserOrganization 为 true 时创建蓝盾项目不查询 TOF 用户组织
+	skipUserOrganization bool
 }
 
 // NewProjectManager ...
 func NewProjectManager(db *mongo.Database, workspaceID string) *ProjectManager {
 	return &ProjectManager{db: db, workspaceID: workspaceID}
+}
+
+// SkipUserOrganization 创建蓝盾项目时不查询 TOF 用户组织，按空组织创建。
+// 用于没有 TOF 的环境（如独立 BCS 项目模式对应的社区版 / 多租户环境）。
+func (m *ProjectManager) SkipUserOrganization() *ProjectManager {
+	m.skipUserOrganization = true
+	return m
 }
 
 // Initialize 为工作空间新建 / 绑定蓝盾项目
@@ -153,10 +162,13 @@ func (m *ProjectManager) createBKCIProject(
 	projectCode, obsProductID, obsProductName string,
 ) (*bkci.Project, error) {
 	user := auth.MustGetUser(ctx)
-	// 1. 先查当前用户的组织信息
-	organization, err := tof.GetUserOrganization(ctx, user.ID)
-	if err != nil {
-		return nil, errors.Wrapf(err, "unable to fetch user %s organization", user.ID)
+	// 1. 先查当前用户的组织信息（跳过时按空组织创建，CreateProject 对空组织天然容忍）
+	var organization *tof.Organization
+	if !m.skipUserOrganization {
+		var err error
+		if organization, err = tof.GetUserOrganization(ctx, user.ID); err != nil {
+			return nil, errors.Wrapf(err, "unable to fetch user %s organization", user.ID)
+		}
 	}
 
 	// 2. 调用蓝盾 API 创建项目
