@@ -597,6 +597,12 @@ func (h *Handler) CreateWorkspace(c *gin.Context) {
 
 	// 创建工作空间默认环境（production, development, test 等）
 	imageRegistry, err := workspace.GetWorkspaceImageRegistry(ctx, h.registry.DB, ws.ID)
+	if err != nil && workspace.IndependentBCSProjectEnabled() && errors.Is(err, bkmsreg.ErrImageRegistryNotFound) {
+		// TODO: 临时跳过内置镜像仓库。独立 BCS 环境跳过了制品库初始化，库里没有 builtin 记录。
+		// 镜像构建不可用。制品库恢复初始化后删掉这个分支。
+		log.Infof(ctx, "skip missing builtin image registry for workspace %s", ws.ID)
+		err = nil
+	}
 	if err != nil {
 		bkerrs.AbortWithErr(c, bkerrs.Wrap(err, bkerrs.ErrCodeInternalServerError, "get image registry"))
 		return
