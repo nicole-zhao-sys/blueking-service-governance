@@ -376,4 +376,27 @@ var _ = Describe("ApiClient", func() {
 		Expect(err.Error()).NotTo(ContainSubstring(longBody))
 		Expect(err.Error()).To(ContainSubstring(longBody[:maxErrorBodyLen]))
 	})
+
+	It("uses project code returned by bkci", func() {
+		client := newClientWithServer(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{"code":0,"data":{"projectId":"pid","projectCode":"system.demo"}}`))
+		})
+
+		proj, err := client.GetProject(context.Background(), "demo")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(proj.ID).To(Equal("pid"))
+		Expect(proj.Code).To(Equal("system.demo"))
+	})
+
+	It("keeps ObjectNotFound and includes raw body when the response is 404", func() {
+		client := newClientWithServer(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"status":404,"message":"project not found"}`))
+		})
+
+		_, err := client.GetProject(context.Background(), "demo")
+		Expect(err).To(MatchError(ObjectNotFound))
+		Expect(err.Error()).To(ContainSubstring("v4_user_project_get"))
+		Expect(err.Error()).To(ContainSubstring("project not found"))
+	})
 })

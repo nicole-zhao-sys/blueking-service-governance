@@ -20,6 +20,7 @@
 package bkci
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"io"
@@ -165,8 +166,9 @@ func (c *ApiClient) GetProject(ctx context.Context, projectCode string) (*Projec
 	}
 
 	return &Project{
-		ID:            mapx.GetStr(result, "data.projectId"),
-		Code:          projectCode,
+		ID: mapx.GetStr(result, "data.projectId"),
+		// 以蓝盾返回的项目 Code 为准，多租户蓝盾的 Code 带租户前缀
+		Code:          cmp.Or(mapx.GetStr(result, "data.projectCode"), projectCode),
 		Name:          mapx.GetStr(result, "data.projectName"),
 		Creator:       mapx.GetStr(result, "data.creator"),
 		HasManagePerm: mapx.GetBool(result, "data.managePermission"),
@@ -976,15 +978,14 @@ func (c *ApiClient) handleOperation(
 	}
 	defer resp.Body.Close()
 
-	// HTTP 状态码检查
-	// 404 错误 -> 蓝盾资源不存在
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, ObjectNotFound
-	}
-
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, errors.Wrapf(err, "read bkci api %s response body", opName)
+	}
+	// HTTP 状态码检查
+	// 404 错误 -> 蓝盾资源不存在；网关未注册该资源时同样是 404，带上响应原文以便区分
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, errors.Wrapf(ObjectNotFound, "bkci api %s, body: %s", opName, truncateBody(body))
 	}
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, errors.Wrapf(
