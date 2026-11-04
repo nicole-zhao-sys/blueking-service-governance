@@ -188,9 +188,8 @@ func initializeIndependentBKCIResources(
 	if err != nil {
 		return nil, errors.Wrap(err, "create builtin helm-git-build pipeline")
 	}
-	if err = bkrepo.NewProjectManager(db, workspaceID, auth.MustGetUser(ctx).ID).Initialize(ctx); err != nil {
-		return nil, errors.Wrap(err, "init bkrepo project")
-	}
+	// TODO: 临时跳过制品库初始化：当前独立 BCS 环境没有部署 bkrepo，创建项目会 401。
+	// 镜像仓库、Helm 仓库和对应的蓝盾凭证都不会创建，镜像构建与 Helm 发布不可用。环境有制品库后恢复调用 Initialize
 	return createProjResp, nil
 }
 
