@@ -224,6 +224,8 @@ svcConf:
     disableBSCP: false
     # 制品库为独立部署：不接入权限中心，接口使用制品库账号 Basic 认证
     enableIndependentBkRepo: false
+    # 关闭内置 Dockerfile 构建流水线，蓝盾未安装「构建并推送 Docker 镜像」插件的环境设为 true
+    disableBuiltinDockerfilePipeline: false
   # 蓝鲸 API 环境配置
   bkApiStages:
     # BSCP

@@ -72,6 +72,9 @@ type FeatureIntegrationsConfig struct {
 	// EnableIndependentBkRepo 制品库为独立部署：不接入权限中心，
 	// 接口改用制品库账号的 Basic 认证，而非平台账号认证。
 	EnableIndependentBkRepo bool
+	// DisableBuiltinDockerfilePipeline 关闭内置的 Dockerfile 构建流水线，用于蓝盾未安装
+	// 「构建并推送 Docker 镜像」插件的环境：创建工作空间时不预建，构建时直接报错。
+	DisableBuiltinDockerfilePipeline bool
 }
 
 // BkApiStagesConfig 蓝鲸 API 版本信息，不指定时均默认为 "prod"
