@@ -201,30 +201,7 @@ func resolveIndependentBCSProjectForWorkspace(
 	if boundBCSProject != nil {
 		return boundBCSProject, nil
 	}
-	// TODO: 临时跳过 BCS 项目创建。当前环境的 bcs-api-gateway 未发布 POST /bcsproject/v1/projects（1640401）。
-	// 这里写入确定性的占位项目，集群、命名空间和部署都不可用。接口发布后改回 ensureIndependentBCSProject。
-	return placeholderIndependentBCSProject(ctx, workspaces, workspaceID, displayName, bizID)
-}
-
-// placeholderIndependentBCSProject 不调用 BCS，用和正式创建相同的 ID、Code 规则生成占位项目。
-func placeholderIndependentBCSProject(
-	ctx context.Context, workspaces *WorkspaceStore, workspaceID, displayName string, bizID int64,
-) (*bcs.Project, error) {
-	projectID, err := independentBCSProjectID(ctx, workspaceID)
-	if err != nil {
-		return nil, err
-	}
-	project := &bcs.Project{
-		ID:    projectID,
-		Code:  bkci.DefaultProjectCode(workspaceID),
-		Name:  bcsmanager.WorkspaceProjectName(displayName, workspaceID),
-		Kind:  bcs.ProjectKindK8s,
-		BizID: cast.ToString(bizID),
-	}
-	if err = ensureBCSProjectNotBound(ctx, workspaces, workspaceID, project); err != nil {
-		return nil, errors.Wrap(err, "ensure bcs project not bound")
-	}
-	return project, nil
+	return ensureIndependentBCSProject(ctx, workspaces, workspaceID, displayName, bizID)
 }
 
 func buildBkSystems(
