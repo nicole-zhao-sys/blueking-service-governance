@@ -22,6 +22,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 
 	"github.com/TencentBlueKing/gopkg/stringx"
 	. "github.com/bytedance/mockey"
@@ -212,6 +214,26 @@ var _ = Describe("BCS API Client", func() {
 		},
 		Entry("returned by bcs-project-manager", 40404, "项目不存在"),
 		Entry("forwarded by bcs-api-gateway", 1405516, "project is not exists"),
+	)
+
+	DescribeTable("get project keeps http status and body when response is not json",
+		func(status int, body string) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte(body))
+			}))
+			DeferCleanup(srv.Close)
+			config.G.BkPlatUrls.BkApiUrlTmpl = srv.URL + "/api/{api_name}"
+			cli, _ = New(auth.User{ID: "foo"})
+
+			_, err := cli.GetProject(ctx, "missing")
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, ErrProjectNotFound)).To(BeFalse())
+			Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("http code: %d", status)))
+			Expect(err.Error()).To(ContainSubstring(body))
+		},
+		Entry("http error with plain text body", http.StatusBadGateway, "Bad Gateway"),
+		Entry("http 200 with plain text body", http.StatusOK, "Bad Request"),
 	)
 
 	It("get project returns error when data is empty", func() {

@@ -350,20 +350,25 @@ func (c *ApiClient) handleOperation(
 	defer metrics.ClientRequest("bcs", apiOperation.FullName(), started, &err)
 
 	ctx, span := apm.StartClientSpan(ctx, "bcs", apiOperation.FullName())
-	resp, err := apiOperation.SetContext(ctx).SetResult(&result).Request()
+	// 不用 SetResult 交给 SDK 解码：响应体不是 JSON 时 SDK 只返回解码错误，状态码和响应体都会丢失
+	resp, err := apiOperation.SetContext(ctx).Request()
 	defer apm.EndClientSpan(span, resp, &err)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, errors.Wrapf(err, "read bcs api %s response body", apiOperation.FullName())
+	}
 	if !httpresp.IsSuccess(resp) {
-		errMsg, _ := io.ReadAll(resp.Body)
-		if len(errMsg) == 0 {
-			errMsg, _ = json.Marshal(result)
-		}
 		return nil, errors.Errorf("call bcs api %s failed, http code: %d, err: %s",
-			apiOperation.FullName(), resp.StatusCode, errMsg)
+			apiOperation.FullName(), resp.StatusCode, truncateBody(body))
+	}
+	if err = json.Unmarshal(body, &result); err != nil {
+		return nil, errors.Wrapf(err, "decode bcs api %s response, http code: %d, body: %s",
+			apiOperation.FullName(), resp.StatusCode, truncateBody(body))
 	}
 
 	if cast.ToInt(result["code"]) != 0 {
@@ -375,6 +380,16 @@ func (c *ApiClient) handleOperation(
 		}
 	}
 	return result, nil
+}
+
+// maxErrBodyLen 错误信息中保留的响应体长度上限，避免网关返回整页 HTML 时撑爆日志
+const maxErrBodyLen = 512
+
+func truncateBody(body []byte) string {
+	if len(body) <= maxErrBodyLen {
+		return string(body)
+	}
+	return string(body[:maxErrBodyLen]) + "...(truncated)"
 }
 
 // ListUserTokens 获取 BCS Auth Info
