@@ -122,9 +122,10 @@ func ensureBkSystemsWithIndependentBCSProject(
 		return nil, errors.Wrap(err, "resolve workspace bcs project")
 	}
 
-	// TODO: 临时跳过 BSCP 绑定。当前环境未必部署了 BSCP，列出项目会直接失败。
-	// 工作空间上的 BSCP 项目和凭证留空，配置下发不可用。环境有 BSCP 后改回 BindBscpProject。
-	bscpBinding := &BscpBinding{}
+	bscpBinding, err := BindBscpProject(ctx, cmdbInfo.BizID, "")
+	if err != nil {
+		return nil, errors.Wrap(err, "bind bscp project")
+	}
 
 	return buildBkSystems(
 		createProjResp,
@@ -186,8 +187,9 @@ func initializeIndependentBKCIResources(
 	if err != nil {
 		return nil, errors.Wrap(err, "create builtin helm-git-build pipeline")
 	}
-	// TODO: 临时跳过制品库初始化：当前独立 BCS 环境没有部署 bkrepo，创建项目会 401。
-	// 镜像仓库、Helm 仓库和对应的蓝盾凭证都不会创建，镜像构建与 Helm 发布不可用。环境有制品库后恢复调用 Initialize
+	if err = bkrepo.NewProjectManager(db, workspaceID, auth.MustGetUser(ctx).ID).Initialize(ctx); err != nil {
+		return nil, errors.Wrap(err, "init bkrepo project")
+	}
 	return createProjResp, nil
 }
 
