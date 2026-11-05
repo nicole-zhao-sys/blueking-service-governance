@@ -220,6 +220,8 @@ svcConf:
     # false：新建/绑定都按蓝盾项目处理，BCS ID/Code 复用蓝盾项目
     #     （绑定已有项目时拉取 BCS 和蓝盾授权项目的交集）。
     enableIndependentBCSProject: false
+    # 关闭 BSCP 对接，未部署 BSCP 的环境设为 true
+    disableBSCP: false
   # 蓝鲸 API 环境配置
   bkApiStages:
     # BSCP

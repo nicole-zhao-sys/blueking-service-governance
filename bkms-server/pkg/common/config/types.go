@@ -66,6 +66,9 @@ type FeatureIntegrationsConfig struct {
 	// 为 true：蓝盾始终新建；新建容器则创建 BCS 项目，绑定已有容器则绑定已有 BCS 项目。
 	// 为 false：新建/绑定都按蓝盾项目处理，BCS ID/Code 复用蓝盾项目。
 	EnableIndependentBCSProject bool
+	// DisableBSCP 关闭 BSCP（服务配置中心）对接，用于未部署 BSCP 的环境。
+	// 开启后创建工作空间不再绑定 BSCP 项目，BSCP 相关接口直接返回未启用错误。
+	DisableBSCP bool
 }
 
 // BkApiStagesConfig 蓝鲸 API 版本信息，不指定时均默认为 "prod"
