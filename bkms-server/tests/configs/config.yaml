@@ -27,6 +27,7 @@ featureIntegrations:
   disableBSCP: false                 # 关闭 BSCP 对接
   enableIndependentBkRepo: false     # 制品库独立部署，不接入权限中心
   disableBuiltinDockerfilePipeline: false   # 关闭内置 Dockerfile 构建流水线
+  disableBkMonitorMCPPerms: false   # 授权监控空间时不包含 MCP 相关权限
 # 蓝鲸 API 环境配置
 bkApiStages:
   kubeinsight: prod
